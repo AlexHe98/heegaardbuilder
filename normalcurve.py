@@ -26,15 +26,24 @@ class NormalCurve:
                     "Edge weights fail the matching constraints!" )
 
         # Count components using union-find.
-        # As a by-product of this, we will also compute coordinates for this
-        # normal curve in terms of its arcs.
         self._points = set()
         self._initialisePoints()
         self._parent = { p: p for p in self._points }
         self._size = { p: 1 for p in self._points }
-        self._components = len( self._points )
+        # As a by-product of this, we will also:
+        # - compute coordinates for this normal curve in terms of its arcs;
+        # - assign an index to each component of this normal curve; and
+        # - record precisely how this normal curve traverses the boundary of
+        #   our triangulation.
         self._arcCoords = [None] * tri.countTriangles()
+        self._roots = list( self._points )
+        self._adjPoints = { p: list() for p in self._points }
+        self._adjCutVerts = { p: list() for p in self._points }
         self._countComponentsImpl()
+
+        # Find where all the switches happen.
+        self._switch = { p: False for p in self._points }
+        self._findSwitches()
 
     def _checkMatching(self):
         for face in self._tri.triangles():
@@ -86,11 +95,11 @@ class NormalCurve:
         if self._size[p] < self._size[q]:
             p, q = q, p
 
-        # Take the union by making p the new root. Also update both the size
-        # and the number of components.
+        # Take the union by making p the new root. Also update the size and
+        # the set of roots.
         self._parent[q] = p
         self._size[p] = self._size[p] + self._size[q]
-        self._components -= 1
+        self._roots.remove(q)
 
     def _countComponentsImpl(self):
         # Piece together the components of our normal curve by looking at one
@@ -105,6 +114,7 @@ class NormalCurve:
             # - The index of the edge opposite vertex i of this face.
             # - The weight of this edge.
             # - The start vertex of this edge.
+            # - The embedding of this edge in tet.
             edgeInds = []
             weights = []
             startVerts = []
@@ -156,11 +166,59 @@ class NormalCurve:
                         pm = ( edgeInds[im], weights[im] - 1 - j )
                     self._union( pp, pm )
 
+                    # Record the fact that the points pp and pm are adjacent,
+                    # including information about which vertex gets cut off
+                    # (so that we can count switches later on).
+                    self._adjPoints[pp].append(pm)
+                    self._adjPoints[pm].append(pp)
+                    if startVerts[ip] == verts[i]:
+                        self._adjCutVerts[pp].append(0)
+                    else:
+                        self._adjCutVerts[pp].append(1)
+                    if startVerts[im] == verts[i]:
+                        self._adjCutVerts[pm].append(0)
+                    else:
+                        self._adjCutVerts[pm].append(1)
+
+    def _findSwitches(self):
+        for e in self._tri.edges():
+            edgeInd = e.index()
+            for i in range( self._weights[edgeInd] ):
+                p = ( edgeInd, i )
+                cutVerts = self._adjCutVerts[p]
+                self._switch[p] = (
+                        self._adjCutVerts[p][0] != self._adjCutVerts[p][1] )
+
     def countComponents(self):
         """
         Returns the number of components of this normal curve.
         """
-        return self._components
+        return len( self._roots )
+
+    def traverseComponent( self, index ):
+        """
+        Iterates through the intersection points of the requested component
+        of this normal curve.
+        """
+        startPt = self._roots[index]
+        currentPt, nextPt = startPt, self._adjPoints[startPt][0]
+        yield currentPt
+        while nextPt != startPt:
+            adjNext = self._adjPoints[nextPt]
+            indCurrent = adjNext.index(currentPt)
+            currentPt, nextPt = nextPt, adjNext[ 1-indCurrent ]
+            yield currentPt
+
+    def countSwitchesInComponent( self, index ):
+        """
+        Returns the number of switches in the requested component of this
+        normal curve.
+        """
+        total = 0
+        for p in self.traverseComponent(index):
+            if self._switch[p]:
+                total += 1
+        return total
 
     #TODO What's the best way to provide user access to arc coordinates?
     #TODO
@@ -170,12 +228,13 @@ class NormalCurve:
 # Test code.
 if __name__ == "__main__":
     tri = Triangulation3.fromIsoSig( "eHbecadjk" )
-    w1 = (0,0,0,2,2,2,3,1,1)
-    print( "{} components.".format(
-        NormalCurve( tri, w1 ).countComponents() ) )
-    w2 = (1,0,1,2,3,2,3,2,1)
-    print( "{} components.".format(
-        NormalCurve( tri, w2 ).countComponents() ) )
-    w3 = (3,5,4,2,3,5,4,5,3)
-    print( "{} components.".format(
-        NormalCurve( tri, w3 ).countComponents() ) )
+    msg = "{} components. Switches: {}."
+    testCases = [
+            (0,0,0,2,2,2,3,1,1),    # 1-component
+            (1,0,1,2,3,2,3,2,1),    # 2-component
+            (3,5,4,2,3,5,4,5,3) ]   # 3-component
+    for w in testCases:
+        curve = NormalCurve( tri, w )
+        comps = curve.countComponents()
+        print( msg.format( comps,
+            [ curve.countSwitchesInComponent(i) for i in range(comps) ] ) )
