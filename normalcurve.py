@@ -42,11 +42,15 @@ class NormalCurve:
         self._roots = list( self._points )
         self._adjPoints = { p: list() for p in self._points }
         self._adjCutVerts = { p: list() for p in self._points }
+        self._adjOppEdgeInds = { p: list() for p in self._points }
         self._countComponentsImpl()
 
         # Find where all the switches happen.
         self._switch = { p: False for p in self._points }
         self._findSwitches()
+
+        # Cache resolvable curves.
+        self._resolveEdges = [None] * self.countComponents()
 
     def _checkMatching(self):
         for face in self._tri.triangles():
@@ -174,6 +178,8 @@ class NormalCurve:
                     # (so that we can count switches later on).
                     self._adjPoints[pp].append(pm)
                     self._adjPoints[pm].append(pp)
+                    self._adjOppEdgeInds[pp].append( edgeInds[i] )
+                    self._adjOppEdgeInds[pm].append( edgeInds[i] )
                     if startVerts[ip] == verts[i]:
                         self._adjCutVerts[pp].append(0)
                     else:
@@ -205,20 +211,29 @@ class NormalCurve:
         """
         return len( self._roots )
 
+    def _traverseComponentImpl( self, index ):
+        startPt = self._roots[index]
+        currentPt, nextPt, nextOppEdgeInd = ( startPt,
+                self._adjPoints[startPt][0],
+                self._adjOppEdgeInds[startPt][0] )
+        yield currentPt, nextPt, nextOppEdgeInd
+        while nextPt != startPt:
+            adjNext = self._adjPoints[nextPt]
+            indCurrent = adjNext.index(currentPt)
+            currentPt, nextPt, nextOppEdgeInd = ( nextPt,
+                    adjNext[ 1-indCurrent ],
+                    self._adjOppEdgeInds[nextPt][ 1-indCurrent ] )
+            yield currentPt, nextPt, nextOppEdgeInd
+
     def traverseComponent( self, index ):
         """
         Iterates through the intersection points of the requested component
         of this normal curve.
         """
-        startPt = self._roots[index]
-        currentPt, nextPt = startPt, self._adjPoints[startPt][0]
-        yield currentPt
-        while nextPt != startPt:
-            adjNext = self._adjPoints[nextPt]
-            indCurrent = adjNext.index(currentPt)
-            currentPt, nextPt = nextPt, adjNext[ 1-indCurrent ]
-            yield currentPt
+        for p, _, _ in self._traverseComponentImpl(index):
+            yield p
 
+    #TODO Cache?
     def countSwitchesInComponent( self, index ):
         """
         Returns the number of switches in the requested component of this
@@ -272,8 +287,6 @@ class NormalCurve:
                     ( emb.tetrahedron(), emb.vertices(),
                         self._weights[ edge.index() ] ) )
         flipWeight = self._flipWeight(e)
-        #TODO TEST
-        print( "Flip weight: {}.".format(flipWeight) )
 
         # Layer on new tetrahedron.
         newTet = self._tri.layerOn(e)
@@ -297,6 +310,45 @@ class NormalCurve:
         #TODO
         pass
 
+    def recogniseResolvable( self, index ):
+        """
+        Recognise the edge indices to which we can resolve the requested
+        component of this normal curve.
+        """
+        if self._resolveEdges[index] is None:
+            switches = 0
+            resEdgeInds = []
+            for info in self._traverseComponentImpl(index):
+                currentPt, nextPt, nextOppEdgeInd = info
+                if self._switch[currentPt]:
+                    switches += 1
+                    if self._switch[nextPt]:
+                        resEdgeInds.append(nextOppEdgeInd)
+            if switches != 2:
+                resEdgeInds = []
+            self._resolveEdges[index] = tuple(resEdgeInds)
+        return self._resolveEdges[index]
+
+    def resolveComponent( self, index, check=True, perform=True ):
+        """
+        Checks the eligibility of and/or performs the operation of resolving
+        the requested component of this normal curve.
+
+        If this routine is asked to both check and perform, then it only
+        performs the operation if the check shows it is legal.
+
+        If check is True, then this routine returns True if and only if
+        resolving the requested component is legal. If check is False, then
+        this routine always returns True.
+
+        Pre-condition:
+        --> If this routine is asked to perform the operation without first
+            running the check, then it must be known in advance that
+            resolving the requested component is legal.
+        """
+        #TODO
+        pass
+
     #TODO What's the best way to provide user access to arc coordinates?
     #TODO
     pass
@@ -305,18 +357,27 @@ class NormalCurve:
 # Test code.
 if __name__ == "__main__":
     initTri = Triangulation3.fromIsoSig( "eHbecadjk" )
+    compsMsg = "{} component(s):"
+    edgeMsg = "After layering on edge {}:"
+    subMsg = "    Switches: {}. Recognise resolvable: {}."
+    #TODO
     msg = "{} components. Switches: {}."
     testCases = [
-            (0,0,0,2,2,2,3,1,1),    # 1-component
-            (1,0,1,2,3,2,3,2,1),    # 2-component
-            (3,5,4,2,3,5,4,5,3) ]   # 3-component
-    for w in testCases:
+            ( (0,0,0,2,2,2,3,1,1), 0 ),     # 1-component
+            ( (1,0,1,2,3,2,3,2,1), 4 ),     # 2-component
+            ( (3,5,4,2,3,5,4,5,3), 0 ),     # 3-component
+            ( (1,1,0,1,0,0,0,0,0), 3 ) ]    # 1-component
+    for w, e in testCases:
         tri = Triangulation3(initTri)
         curve = NormalCurve( tri, w )
         comps = curve.countComponents()
-        print( msg.format( comps,
-            [ curve.countSwitchesInComponent(i) for i in range(comps) ] ) )
-        curve.layerOn( tri.edge(0) )
-        print( msg.format( comps,
-            [ curve.countSwitchesInComponent(i) for i in range(comps) ] ) )
+        print( compsMsg.format(comps) )
+        for c in range(comps):
+            print( subMsg.format( curve.countSwitchesInComponent(c),
+                curve.recogniseResolvable(c) ) )
+        curve.layerOn( tri.edge(e) )
+        print( edgeMsg.format(e) )
+        for c in range(comps):
+            print( subMsg.format( curve.countSwitchesInComponent(c),
+                curve.recogniseResolvable(c) ) )
         print()
