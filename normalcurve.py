@@ -33,13 +33,16 @@ class NormalCurve:
         self._initialisePoints()
         self._parent = { p: p for p in self._points }
         self._size = { p: 1 for p in self._points }
+        #TODO Do we really need arc coordinates?
         # As a by-product of this, we will also:
         # - compute coordinates for this normal curve in terms of its arcs;
-        # - assign an index to each component of this normal curve; and
-        # - record precisely how this normal curve traverses the boundary of
-        #   our triangulation.
+        #   and
+        # - assign an index to each component of this normal curve.
         self._arcCoords = [None] * self._tri.countTriangles()
         self._roots = list( self._points )
+        # This is also a good opportunity to record useful information about
+        # how each component of this normal curve traverses the boundary of
+        # our triangulation.
         self._adjPoints = { p: list() for p in self._points }
         self._adjCutVerts = { p: list() for p in self._points }
         self._adjOppEdgeInds = { p: list() for p in self._points }
@@ -49,8 +52,11 @@ class NormalCurve:
         self._switch = { p: False for p in self._points }
         self._findSwitches()
 
-        # Cache resolvable curves.
+        # Cache the following whenever they are first computed:
+        # - Resolvable components.
+        # - Lengths of components.
         self._resolveEdges = [None] * self.countComponents()
+        self._lengths = [None] * self.countComponents()
 
     def _checkMatching(self):
         for face in self._tri.triangles():
@@ -188,6 +194,8 @@ class NormalCurve:
                         self._adjCutVerts[pm].append(0)
                     else:
                         self._adjCutVerts[pm].append(1)
+            #TODO Cache arcCounts (as a tuple) in self._arcCoords, or just
+            #   get rid of self._arcCoords entirely?
 
     def _findSwitches(self):
         for e in self._tri.edges():
@@ -205,17 +213,24 @@ class NormalCurve:
         """
         return Triangulation3( self._tri )
 
+    def weights(self):
+        """
+        Returns the tuple of edge weights that define this normal curve.
+        """
+        return self._weights
+
     def countComponents(self):
         """
         Returns the number of components of this normal curve.
         """
         return len( self._roots )
 
-    def _traverseComponentImpl( self, index ):
-        startPt = self._roots[index]
+    def _traverseCurve( self, startPt, d ):
+        # Either traverse in "direction 0" or "direction 1", depending on
+        # whether d is 0 or 1.
         currentPt, nextPt, nextOppEdgeInd = ( startPt,
-                self._adjPoints[startPt][0],
-                self._adjOppEdgeInds[startPt][0] )
+                self._adjPoints[startPt][d],
+                self._adjOppEdgeInds[startPt][d] )
         yield currentPt, nextPt, nextOppEdgeInd
         while nextPt != startPt:
             adjNext = self._adjPoints[nextPt]
@@ -224,6 +239,10 @@ class NormalCurve:
                     adjNext[ 1-indCurrent ],
                     self._adjOppEdgeInds[nextPt][ 1-indCurrent ] )
             yield currentPt, nextPt, nextOppEdgeInd
+
+    def _traverseComponentImpl( self, index ):
+        for t in self._traverseCurve( self._roots[index], 0 ):
+            yield t
 
     def traverseComponent( self, index ):
         """
@@ -310,6 +329,16 @@ class NormalCurve:
         #TODO
         pass
 
+    def componentLength( self, index ):
+        """
+        Returns the length of the requested component of this normal curve.
+        """
+        if self._lengths[index] is None:
+            self._lengths[index] = 0
+            for p, _, _ in self._traverseComponentImpl(index):
+                self._lengths[index] += 1
+        return self._lengths[index]
+
     def recogniseResolvable( self, index ):
         """
         Recognise the edge indices to which we can resolve the requested
@@ -328,6 +357,93 @@ class NormalCurve:
                 resEdgeInds = []
             self._resolveEdges[index] = tuple(resEdgeInds)
         return self._resolveEdges[index]
+
+    def _bubblePoints( self, e, i ):
+        # Find all intersection points that form a bubble around vertex i of
+        # edge e.
+        if self._weights[ e.index() ] == 0:
+            return set()
+        bubble = set()
+        if i == 0:
+            startPt = ( e.index(), 0 )
+        else:
+            startPt = ( e.index(), self._weights[ e.index() ] - 1 )
+        bubble.add(startPt)
+
+        # Traverse in both directions until we turn away from vertex i.
+        for d in range(2):
+            if self._adjCutVerts[startPt][d] == 1 - i:
+                # Curve immediately turns away from vertex i.
+                continue
+
+            # Curve initially turns towards vertex i, and it will continue
+            # doing so until we reach a switch.
+            for _, p, _ in self._traverseCurve( startPt, d ):
+                bubble.add(p)
+                if self._switch[p]:
+                    break
+
+        # If bubble only contains startPt, then the curve turns away from
+        # vertex i in both directions.
+        if len(bubble) == 1:
+            return set()
+        else:
+            return bubble
+
+    def _isotopeOffEdge( self, e, i ):
+        # Try to isotope the arc that goes around vertex i of edge e, and
+        # return True if and only if this was possible.
+        # Start by ruling out special cases:
+        # - We have no bubble around vertex i because the curve turns away
+        #   from vertex i in both directions.
+        # - The bubble meets every intersection point of a component, which
+        #   means that we have either: (1) instead of isotoping, we should
+        #   resolve the curve; or (2) the curve is a vertex link.
+        bubble = self._bubblePoints( e, i )
+        lb = len(bubble)
+        if lb == 0:
+            return False
+        edgeInd = e.index()
+        if i == 0:
+            pt = ( edgeInd, 0 )
+        else:
+            pt = ( edgeInd, self._weights[edgeInd] - 1 )
+        if lb == self.componentLength(
+                self._roots.index( self._find(pt) ) ):
+            return False
+
+        # Work out how weights would change after isotopy.
+        newWeights = list( self._weights )
+        for edge in self._tri.edges():
+            if not edge.isBoundary():
+                continue
+            edgeInd = edge.index()
+
+            # How do the weights change on this edge?
+            oldWeight = self._weights[edgeInd]
+            if oldWeight == 1:
+                if ( edgeInd, 0 ) not in bubble:
+                    newWeights[edgeInd] += 2
+            else:
+                if ( edgeInd, 0 ) in bubble:
+                    newWeights[edgeInd] -= 1
+                else:
+                    newWeights[edgeInd] += 1
+                if ( edgeInd, oldWeight - 1 ) in bubble:
+                    newWeights[edgeInd] -= 1
+                else:
+                    newWeights[edgeInd] += 1
+        self._processWeights(newWeights)
+        return True
+
+    def _clearEdge( self, e ):
+        # Assuming that a component of this normal curve resolves to the edge
+        # e, isotope everything off e to make resolving possible.
+        tet = e.embedding(0).tetrahedron()
+        verts = e.embedding(0).vertices()
+        while self._weights[ e.index() ] > 0:
+            self._isotopeOffEdge( e, 0 )
+            e = tet.edge( verts[0], verts[1] )
 
     def resolveComponent( self, index, check=True, perform=True ):
         """
@@ -366,18 +482,46 @@ if __name__ == "__main__":
             ( (0,0,0,2,2,2,3,1,1), 0 ),     # 1-component
             ( (1,0,1,2,3,2,3,2,1), 4 ),     # 2-component
             ( (3,5,4,2,3,5,4,5,3), 0 ),     # 3-component
-            ( (1,1,0,1,0,0,0,0,0), 3 ) ]    # 1-component
+            ( (1,1,0,1,0,0,0,0,0), 3 ),     # 1-component
+            ( (5,5,4,0,5,5,5,4,0), 0 ) ]    # 3-component
     for w, e in testCases:
         tri = Triangulation3(initTri)
         curve = NormalCurve( tri, w )
+
+        # Test components.
         comps = curve.countComponents()
         print( compsMsg.format(comps) )
         for c in range(comps):
             print( subMsg.format( curve.countSwitchesInComponent(c),
                 curve.recogniseResolvable(c) ) )
+
+        # Test layering.
         curve.layerOn( tri.edge(e) )
         print( edgeMsg.format(e) )
         for c in range(comps):
             print( subMsg.format( curve.countSwitchesInComponent(c),
                 curve.recogniseResolvable(c) ) )
+
+        # Test bubble/isotopy.
+        tri = Triangulation3(initTri)
+        curve = NormalCurve( tri, w )
+        iso = curve._isotopeOffEdge( tri.edge(0), 0 )
+        print( "Isotopy: {}.".format(iso) )
+        if iso:
+            print( curve.weights() )
+            comps = curve.countComponents()
+            for c in range(comps):
+                print( subMsg.format( curve.countSwitchesInComponent(c),
+                    curve.recogniseResolvable(c) ) )
+        #print( "Bubble: {}.".format(
+        #    curve._bubblePoints( tri.edge(0), 0 ) ) )
         print()
+
+    # Test clearing edge 7 of testCases[4].
+    print( "Clear edge." )
+    tri = Triangulation3(initTri)
+    curve = NormalCurve( tri, testCases[4][0] )
+    curve._clearEdge( tri.edge(7) )
+    print( curve.weights() )
+    print()
+    #TODO
