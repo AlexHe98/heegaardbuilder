@@ -4,13 +4,16 @@ A class to represent a partial triangulation of a Heegaard splitting.
 from regina import *
 
 
-class PartialHeegaardSpliting:
+class PartialHeegaardSplitting:
     """
     A partial triangulation of a Heegaard splitting, with Heegaard curves
-    represented as a union of a normal curve and a collection of boundary
-    edges.
+    represented as a union of a normal curve (possibly with many components)
+    and a collection of boundary edges.
+
+    Each Heegaard curve given by a component of the normal curve is
+    *unresolved*, and each Heegaard curve given by a boundary edge is
+    *resolved*.
     """
-    #TODO Refactor!
     def __init__( self, tri, weights, resolvedEdgeIndices=set() ):
         """
         Create a partial triangulation with a boundary curve, described by
@@ -22,6 +25,7 @@ class PartialHeegaardSpliting:
             raise ValueError( "Wrong number of edge weights!" )
 
         self._tri = tri
+        self._resolvedEdges = set(resolvedEdgeIndices)
         self._processWeights(weights)
 
     def _processWeights( self, weights ):
@@ -59,8 +63,8 @@ class PartialHeegaardSpliting:
         # Cache the following whenever they are first computed:
         # - Resolvable components.
         # - Lengths of components.
-        self._resolvableEdges = [None] * self.countComponents()
-        self._lengths = [None] * self.countComponents()
+        self._resolvableEdges = [None] * self.countUnresolved()
+        self._lengths = [None] * self.countUnresolved()
 
     def _checkMatching(self):
         for face in self._tri.triangles():
@@ -223,11 +227,29 @@ class PartialHeegaardSpliting:
         """
         return self._weights
 
+    def getResolvedEdgeIndices(self):
+        """
+        Returns a copy of the set of resolved edge indices.
+        """
+        return set( self._resolvedEdges )
+
+    def countUnresolved(self):
+        """
+        Returns the number of unresolved components of this normal curve.
+        """
+        return len( self._roots )
+
+    def countResolved(self):
+        """
+        Returns the number of resolved components of this normal curve.
+        """
+        return len( self._resolvedEdges )
+
     def countComponents(self):
         """
         Returns the number of components of this normal curve.
         """
-        return len( self._roots )
+        return self.countUnresolved() + self.countResolved()
 
     def _traverseCurve( self, startPt, d ):
         # Either traverse in "direction 0" or "direction 1", depending on
@@ -306,21 +328,27 @@ class PartialHeegaardSpliting:
             if edge == e:
                 continue
             emb = edge.embedding(0)
-            temp.append(
-                    ( emb.tetrahedron(), emb.vertices(),
-                        self._weights[ edge.index() ] ) )
+            temp.append( (
+                emb.tetrahedron(),
+                emb.vertices(),
+                self._weights[ edge.index() ],
+                edge.index() ) )
         flipWeight = self._flipWeight(e)
 
         # Layer on new tetrahedron.
         newTet = self._tri.layerOn(e)
-        temp.append( ( newTet, Perm4(2,3,0,1), flipWeight ) )
+        temp.append( ( newTet, Perm4(2,3,0,1), flipWeight, None ) )
 
         # Use temp to compute new weight coordinates.
         newWeights = [0] * self._tri.countEdges()
-        for tet, verts, wt in temp:
-            edgeInd = tet.edge( verts[0], verts[1] ).index()
-            newWeights[edgeInd] = wt
+        newResEdges = set()
+        for tet, verts, wt, oldInd in temp:
+            newInd = tet.edge( verts[0], verts[1] ).index()
+            newWeights[newInd] = wt
+            if oldInd in self._resolvedEdges:
+                newResEdges.add(newInd)
         self._processWeights(newWeights)
+        self._resolvedEdges = newResEdges
 
     def flipEdge( self, e ):
         """
@@ -449,6 +477,32 @@ class PartialHeegaardSpliting:
             self._isotopeOffEdge( e, 0 )
             e = tet.edge( verts[0], verts[1] )
 
+    def resolveComponent( self, index ):
+        """
+        Checks whether it is possible to resolve the requested component, and
+        if so resolves this component.
+        """
+        resEdgeInds = self.recogniseResolvable(index)
+        if not resEdgeInds:
+            return False
+
+        # First compute how edge weights would reduce as a result of
+        # resolving the requested component.
+        weightChanges = [0] * self._tri.countEdges()
+        for p, _, _ in self._traverseComponentImpl(index):
+            weightChanges[ p[0] ] -= 1
+
+        # Clear the edge, and then resolve the requested component by simply
+        # deleting its contributions to edge weight and adding its index to
+        # the set of resolved edge indices.
+        edgeInd = resEdgeInds[0]
+        self._clearEdge( self._tri.edge(edgeInd) )
+        self._resolvedEdges.add(edgeInd)
+        newWeights = [ self._weights[i] + weightChanges[i] for
+                i in range( self._tri.countEdges() ) ]
+        self._processWeights(newWeights)
+        return True
+
     #TODO What's the best way to provide user access to arc coordinates?
     #TODO
     pass
@@ -460,7 +514,6 @@ if __name__ == "__main__":
     compsMsg = "{} component(s):"
     edgeMsg = "After layering on edge {}:"
     subMsg = "    Switches: {}. Recognise resolvable: {}."
-    #TODO
     msg = "{} components. Switches: {}."
     testCases = [
             ( (0,0,0,2,2,2,3,1,1), 0 ),     # 1-component
@@ -468,44 +521,60 @@ if __name__ == "__main__":
             ( (3,5,4,2,3,5,4,5,3), 0 ),     # 3-component
             ( (1,1,0,1,0,0,0,0,0), 3 ),     # 1-component
             ( (5,5,4,0,5,5,5,4,0), 0 ) ]    # 3-component
+
+    # Basic operation tests.
     for w, e in testCases:
         tri = Triangulation3(initTri)
-        curve = NormalCurve( tri, w )
+        phs = PartialHeegaardSplitting( tri, w )
 
         # Test components.
-        comps = curve.countComponents()
+        comps = phs.countUnresolved()
         print( compsMsg.format(comps) )
         for c in range(comps):
-            print( subMsg.format( curve.countSwitchesInComponent(c),
-                curve.recogniseResolvable(c) ) )
+            print( subMsg.format( phs.countSwitchesInComponent(c),
+                phs.recogniseResolvable(c) ) )
 
         # Test layering.
-        curve.layerOn( tri.edge(e) )
+        phs.layerOn( tri.edge(e) )
         print( edgeMsg.format(e) )
         for c in range(comps):
-            print( subMsg.format( curve.countSwitchesInComponent(c),
-                curve.recogniseResolvable(c) ) )
+            print( subMsg.format( phs.countSwitchesInComponent(c),
+                phs.recogniseResolvable(c) ) )
 
         # Test bubble/isotopy.
         tri = Triangulation3(initTri)
-        curve = NormalCurve( tri, w )
-        iso = curve._isotopeOffEdge( tri.edge(0), 0 )
+        phs = PartialHeegaardSplitting( tri, w )
+        iso = phs._isotopeOffEdge( tri.edge(0), 0 )
         print( "Isotopy: {}.".format(iso) )
         if iso:
-            print( curve.weights() )
-            comps = curve.countComponents()
+            print( phs.weights() )
+            comps = phs.countUnresolved()
             for c in range(comps):
-                print( subMsg.format( curve.countSwitchesInComponent(c),
-                    curve.recogniseResolvable(c) ) )
+                print( subMsg.format( phs.countSwitchesInComponent(c),
+                    phs.recogniseResolvable(c) ) )
         #print( "Bubble: {}.".format(
-        #    curve._bubblePoints( tri.edge(0), 0 ) ) )
+        #    phs._bubblePoints( tri.edge(0), 0 ) ) )
         print()
 
     # Test clearing edge 7 of testCases[4].
     print( "Clear edge." )
     tri = Triangulation3(initTri)
-    curve = NormalCurve( tri, testCases[4][0] )
-    curve._clearEdge( tri.edge(7) )
-    print( curve.weights() )
+    phs = PartialHeegaardSplitting( tri, testCases[4][0] )
+    phs._clearEdge( tri.edge(7) )
+    print( phs.weights() )
+    print()
+
+    # Test resolving (to edge 7 of testCases[4]).
+    print( "Resolve components." )
+    tri = Triangulation3(initTri)
+    phs = PartialHeegaardSplitting( tri, testCases[4][0] )
+    for i in range(3):
+        res = phs.resolveComponent(0)
+        print( "Resolve component {}: {}.".format( i, res ) )
+        if res:
+            print( "Resolved edge indices: {}.".format(
+                phs.getResolvedEdgeIndices() ) )
+            print( "Weights: {}.".format( phs.weights() ) )
+            break
     print()
     #TODO
