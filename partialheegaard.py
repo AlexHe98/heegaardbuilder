@@ -62,9 +62,13 @@ class PartialHeegaardSplitting:
 
         # Cache the following whenever they are first computed:
         # - Resolvable components.
+        # - Components that are isotopic to off-diagonals.
         # - Lengths of components.
+        # - Number of switches.
         self._resolvableEdges = [None] * self.countUnresolved()
+        self._offDiagEdges = [None] * self.countUnresolved()
         self._lengths = [None] * self.countUnresolved()
+        self._switchCounts = [None] * self.countUnresolved()
 
     def _checkMatching(self):
         for face in self._tri.triangles():
@@ -223,7 +227,8 @@ class PartialHeegaardSplitting:
 
     def weights(self):
         """
-        Returns the tuple of edge weights that define this normal curve.
+        Returns the tuple of edge weights that define the unresolved
+        components of the underlying curve.
         """
         return self._weights
 
@@ -235,36 +240,39 @@ class PartialHeegaardSplitting:
 
     def countUnresolved(self):
         """
-        Returns the number of unresolved components of this normal curve.
+        Returns the number of unresolved components of the underlying curve.
         """
         return len( self._roots )
 
     def countResolved(self):
         """
-        Returns the number of resolved components of this normal curve.
+        Returns the number of resolved components of the underlying curve.
         """
         return len( self._resolvedEdges )
 
     def countComponents(self):
         """
-        Returns the number of components of this normal curve.
+        Returns the number of components of the underlying curve.
         """
         return self.countUnresolved() + self.countResolved()
 
     def _traverseCurve( self, startPt, d ):
         # Either traverse in "direction 0" or "direction 1", depending on
         # whether d is 0 or 1.
-        currentPt, nextPt, nextOppEdgeInd = ( startPt,
+        prevPt, currentPt, nextPt, nextOppEdgeInd = (
+                self._adjPoints[startPt][1 - d],
+                startPt,
                 self._adjPoints[startPt][d],
                 self._adjOppEdgeInds[startPt][d] )
-        yield currentPt, nextPt, nextOppEdgeInd
+        yield prevPt, currentPt, nextPt, nextOppEdgeInd
         while nextPt != startPt:
-            adjNext = self._adjPoints[nextPt]
-            indCurrent = adjNext.index(currentPt)
-            currentPt, nextPt, nextOppEdgeInd = ( nextPt,
-                    adjNext[ 1-indCurrent ],
-                    self._adjOppEdgeInds[nextPt][ 1-indCurrent ] )
-            yield currentPt, nextPt, nextOppEdgeInd
+            indNext = 1 - self._adjPoints[nextPt].index(currentPt)
+            prevPt, currentPt, nextPt, nextOppEdgeInd = (
+                    currentPt,
+                    nextPt,
+                    self._adjPoints[nextPt][indNext],
+                    self._adjOppEdgeInds[nextPt][indNext] )
+            yield prevPt, currentPt, nextPt, nextOppEdgeInd
 
     def _traverseComponentImpl( self, index ):
         for t in self._traverseCurve( self._roots[index], 0 ):
@@ -272,49 +280,55 @@ class PartialHeegaardSplitting:
 
     def traverseComponent( self, index ):
         """
-        Iterates through the intersection points of the requested component
-        of this normal curve.
+        Iterates through the intersection points of the requested unresolved
+        component of the underlying curve.
         """
-        for p, _, _ in self._traverseComponentImpl(index):
+        for _, p, _, _ in self._traverseComponentImpl(index):
             yield p
 
-    #TODO Cache?
     def countSwitchesInComponent( self, index ):
         """
-        Returns the number of switches in the requested component of this
-        normal curve.
-        """
-        total = 0
-        for p in self.traverseComponent(index):
-            if self._switch[p]:
-                total += 1
-        return total
+        Returns the number of switches in the requested unresolved component
+        of the underlying curve.
 
-    def _flipWeight( self, e ):
-        # Compute the new weight after flipping the edge e.
-        # Start by counting "non-corner arcs" that meet e, as these will also
-        # meet the new edge.
-        newWeight = 0
+        The first call to this routine caches the result, so subsequent calls
+        with the same index will not need to recompute the answer.
+        """
+        if self._switchCounts[index] is None:
+            self._switchCounts[index] = 0
+            for p in self.traverseComponent(index):
+                if self._switch[p]:
+                    self._switchCounts[index] += 1
+        return self._switchCounts[index]
+
+    def _flipWeightChange( self, e ):
+        # Compute how the weight changes after flipping the edge e.
+        # Start by counting "corner arcs" that meet e; we will lose the
+        # corresponding intersection points after flipping e.
+        weightChange = 0
         ind = e.index()
         wt = self._weights[ind]
         for i in range(wt):
-            if self._switch[ (ind, i) ]:
-                # Switch implies non-corner.
-                newWeight += 1
+            if not self._switch[ (ind, i) ]:
+                # No switch means we have a "corner arc".
+                weightChange -= 1
 
         # Now count "corner arcs" that will meet the new edge.
         emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
         for i in range(2):
             tet = emb[i].tetrahedron()
-            verts = emb[i].vertices()
+            ver = emb[i].vertices()
             otherArcs = 0
             for j in range(2):
-                otherInd = tet.edge( verts[j], verts[2+i] ).index()
+                otherInd = tet.edge( ver[j], ver[2+i] ).index()
                 otherArcs += self._weights[otherInd]
             otherArcs = ( otherArcs - wt ) // 2
-            newWeight += otherArcs
+            weightChange += otherArcs
 
-        return newWeight
+        return weightChange
+
+    def _flipWeight( self, e ):
+        return self._weights[ e.index() ] + self._flipWeightChange(e)
 
     def layerOn( self, e ):
         """
@@ -323,6 +337,20 @@ class PartialHeegaardSplitting:
         Pre-condition:
         --> e is a boundary edge of self.triangulation().
         """
+        #TODO Test: Try to work out what's going on by hand.
+        if self._tri.size() > 8:
+            for be in self._tri.edges():
+                if not be.isBoundary():
+                    continue
+                print( "Ind: {}. Emb0: {}. Emb1: {}. Wt: {}.".format(
+                    be.index(),
+                    be.embedding(0),
+                    be.embedding( be.degree() - 1 ),
+                    self._weights[ be.index() ] ) )
+            raise RuntimeError( "END TEST." )
+        #TODO Test.
+        if self._tri.size() > 8:
+            print( "Edge {}.".format( e.index() ) )
         temp = []
         for edge in self._tri.edges():
             if edge == e:
@@ -335,10 +363,16 @@ class PartialHeegaardSplitting:
                 edge.index() ) )
         flipWeight = self._flipWeight(e)
 
+        #TODO Test.
+        if self._tri.size() > 8:
+            print( "Made it to layering." )
         # Layer on new tetrahedron.
         newTet = self._tri.layerOn(e)
         temp.append( ( newTet, Perm4(2,3,0,1), flipWeight, None ) )
 
+        #TODO Test.
+        if self._tri.size() > 8:
+            print( "Made it to weights." )
         # Use temp to compute new weight coordinates.
         newWeights = [0] * self._tri.countEdges()
         newResEdges = set()
@@ -347,6 +381,9 @@ class PartialHeegaardSplitting:
             newWeights[newInd] = wt
             if oldInd in self._resolvedEdges:
                 newResEdges.add(newInd)
+        #TODO Test.
+        if self._tri.size() > 8:
+            print( "Made it to processing weights." )
         self._processWeights(newWeights)
         self._resolvedEdges = newResEdges
 
@@ -358,12 +395,16 @@ class PartialHeegaardSplitting:
         Pre-condition:
         --> e is a boundary edge of self.triangulation().
         """
-        #TODO
-        pass
+        #TODO Optimise!
+        self.layerOn(e)
 
     def componentLength( self, index ):
         """
-        Returns the length of the requested component of this normal curve.
+        Returns the length of the requested unresolved component of the
+        underlying curve.
+
+        The first call to this routine caches the result, so subsequent calls
+        with the same index will not need to recompute the answer.
         """
         if self._lengths[index] is None:
             self._lengths[index] = 0
@@ -371,24 +412,53 @@ class PartialHeegaardSplitting:
                 self._lengths[index] += 1
         return self._lengths[index]
 
+    #TODO What's the best way to provide user access to arc coordinates?
+
     def recogniseResolvable( self, index ):
         """
         Recognise the edge indices to which we can resolve the requested
-        component of this normal curve.
+        unresolved component of the underlying curve.
+
+        The first call to this routine caches the result, so subsequent calls
+        with the same index will not need to recompute the answer.
         """
         if self._resolvableEdges[index] is None:
             switches = 0
             resEdgeInds = []
             for info in self._traverseComponentImpl(index):
-                currentPt, nextPt, nextOppEdgeInd = info
+                _, currentPt, nextPt, nextOppEdgeInd = info
                 if self._switch[currentPt]:
                     switches += 1
                     if self._switch[nextPt]:
                         resEdgeInds.append(nextOppEdgeInd)
-            if switches != 2:
-                resEdgeInds = []
-            self._resolvableEdges[index] = tuple(resEdgeInds)
+            if switches == 2:
+                self._resolvableEdges[index] = tuple(resEdgeInds)
+            else:
+                self._resolvableEdges[index] = tuple()
         return self._resolvableEdges[index]
+
+    def recogniseOffDiagonal( self, index ):
+        """
+        Recognise the edge indices across which the requested unresolved
+        component forms an off-diagonal.
+
+        The first call to this routine caches the result, so subsequent calls
+        with the same index will not need to recompute the answer.
+        """
+        if self._offDiagEdges[index] is None:
+            switches = 0
+            crossDiagInds = []
+            for info in self._traverseComponentImpl(index):
+                prevPt, currentPt, nextPt, nextOppEdgeInd = info
+                if ( self._switch[prevPt] and not self._switch[currentPt] and
+                        self._switch[nextPt] ):
+                    # We are in the middle of a bubble of length 2.
+                    crossDiagInds.append( currentPt[0] )
+            if switches == 2 and crossDiagInds:
+                self._offDiagEdges[index] = tuple(crossDiagInds)
+            else:
+                self._offDiagEdges[index] = tuple()
+        return self._offDiagEdges[index]
 
     def _bubblePoints( self, e, i ):
         # Find all intersection points that form a bubble around vertex i of
@@ -410,7 +480,7 @@ class PartialHeegaardSplitting:
 
             # Curve initially turns towards vertex i, and it will continue
             # doing so until we reach a switch.
-            for _, p, _ in self._traverseCurve( startPt, d ):
+            for _, _, p, _ in self._traverseCurve( startPt, d ):
                 bubble.add(p)
                 if self._switch[p]:
                     break
@@ -474,13 +544,24 @@ class PartialHeegaardSplitting:
         tet = e.embedding(0).tetrahedron()
         verts = e.embedding(0).vertices()
         while self._weights[ e.index() ] > 0:
-            self._isotopeOffEdge( e, 0 )
+            #TODO This check shouldn't be necessary.
+            if not self._isotopeOffEdge( e, 0 ):
+                for be in self._tri.edges():
+                    if not be.isBoundary():
+                        continue
+                    print( "Ind: {}. Emb0: {}. Emb1: {}. Wt: {}.".format(
+                        be.index(),
+                        be.embedding(0),
+                        be.embedding( be.degree() - 1 ),
+                        self._weights[ be.index() ] ) )
+                #TODO Print enough info so I can look at this by hand.
+                raise RuntimeError( "Isotoping unexpectedly failed." )
             e = tet.edge( verts[0], verts[1] )
 
     def resolveComponent( self, index ):
         """
-        Checks whether it is possible to resolve the requested component, and
-        if so resolves this component.
+        Checks whether it is possible to resolve the requested unresolved
+        component, and if so resolves this component.
         """
         resEdgeInds = self.recogniseResolvable(index)
         if not resEdgeInds:
@@ -489,7 +570,7 @@ class PartialHeegaardSplitting:
         # First compute how edge weights would reduce as a result of
         # resolving the requested component.
         weightChanges = [0] * self._tri.countEdges()
-        for p, _, _ in self._traverseComponentImpl(index):
+        for _, p, _, _ in self._traverseComponentImpl(index):
             weightChanges[ p[0] ] -= 1
 
         # Clear the edge, and then resolve the requested component by simply
@@ -503,7 +584,112 @@ class PartialHeegaardSplitting:
         self._processWeights(newWeights)
         return True
 
-    #TODO What's the best way to provide user access to arc coordinates?
+    def isHeegaard(self):
+        """
+        Does the underlying curve give a valid Heegaard diagram?
+        """
+        #TODO Check handlebody, number of curves, and separating?
+        pass
+
+    def allComponentsNice(self):
+        """
+        Are all components of the underlying curve "nice" in the sense that
+        they are either resolved, resolvable or isotopic to an off-diagonal?
+        """
+        for i in range( self.countUnresolved() ):
+            if ( not self.recogniseResolvable(i) and
+                    not self.recogniseOffDiagonal(i) ):
+                return False
+        return True
+
+    def isMaximalWeight( self, e ):
+        """
+        Is the edge e maximal-weight?
+
+        If e is not even a boundary edge, then this routine always returns
+        False. Otherwise, this routine returns True if and only if the weight
+        of e is maximal among boundary edges.
+        """
+        return ( self._weights[ e.index() ] == max( self._weights ) )
+
+    def isReducible( self, e ):
+        """
+        Is the edge e reducible?
+        """
+        return ( self._flipWeightChange(e) < 0 )
+
+    def resolveAll(self):
+        """
+        Resolves all components of the underlying curve.
+        """
+        while not self.allComponentsNice():
+            #TODO Test.
+            size = self._tri.size()
+            print(size)
+            if size > 20:
+                return
+            # Try to flip a maximal-weight reducible edge.
+            foundMinRed = False
+            for e in self._tri.edges():
+                #TODO Test.
+                if size > 8:
+                    print( size, e.index() )
+                if ( not e.isBoundary() or not self.isMaximalWeight(e) or
+                        not self.isReducible(e) ):
+                    continue
+                foundMinRed = True
+                self.flipEdge(e)
+                break
+            if foundMinRed:
+                continue
+
+            # If there is no maximal-weight reducible edge, then try to
+            # resolve a component.
+            resolved = False
+            for i in range( self.countUnresolved() ):
+                if self.resolveComponent(i):
+                    resolved = True
+                    break
+            if resolved:
+                continue
+
+            # If we can't resolve either, then we must be able to reduce the
+            # number of switches by flipping a maximal-weight edge.
+            foundSwitch = False
+            for e in self._tri.edges():
+                if not e.isBoundary() or not self.isMaximalWeight(e):
+                    continue
+
+                # Check whether flipping this maximal-weight edge e would
+                # reduce the total number of switches.
+                for i in range( self._weights[ e.index() ] ):
+                    pt = ( e.index(), i )
+                    if ( self._switch[pt] and
+                            self._switch[ self._adjPoints[pt][0] ] and
+                            self._switch[ self._adjPoints[pt][1] ] ):
+                        foundSwitch = True
+                        self.flipEdge(e)
+                        break
+                if foundSwitch:
+                    break
+
+        # Once we break out of the above loop, we know that every component
+        # is either resolvable or isotopic to an off-diagonal. Handle the
+        # resolvable components first.
+        res = True
+        while res:
+            for i in range( self.countUnresolved() ):
+                res = self.resolveComponent(i)
+                if res:
+                    break
+
+        # Now handle the off-diagonals.
+        for i in range( self.countUnresolved() ):
+            self.flipEdge( self.recogniseOffDiagonal(i)[0] )
+        while self.countUnresolved() > 0:
+            if not self.resolveComponent(0):
+                raise RuntimeError( "Unexpected unresolvable component." )
+
     #TODO
     pass
 
@@ -565,7 +751,7 @@ if __name__ == "__main__":
     print()
 
     # Test resolving (to edge 7 of testCases[4]).
-    print( "Resolve components." )
+    print( "Resolve one component." )
     tri = Triangulation3(initTri)
     phs = PartialHeegaardSplitting( tri, testCases[4][0] )
     for i in range(3):
@@ -576,5 +762,14 @@ if __name__ == "__main__":
                 phs.getResolvedEdgeIndices() ) )
             print( "Weights: {}.".format( phs.weights() ) )
             break
+    print()
+
+    # Test resolving all components (on testCases[1]).
+    print( "Resolve all components." )
+    tri = Triangulation3(initTri)
+    phs = PartialHeegaardSplitting( tri, testCases[1][0] )
+    phs.resolveAll()
+    print( "Final size: {}. Resolved edges: {}.".format(
+        phs.triangulation().size(), phs.getResolvedEdgeIndices() ) )
     print()
     #TODO
