@@ -55,7 +55,7 @@ class NormalCurve:
         # Cache the following whenever they are first computed:
         # - Resolvable components.
         # - Lengths of components.
-        self._resolveEdges = [None] * self.countComponents()
+        self._resolvableEdges = [None] * self.countComponents()
         self._lengths = [None] * self.countComponents()
 
     def _checkMatching(self):
@@ -335,7 +335,7 @@ class NormalCurve:
         """
         if self._lengths[index] is None:
             self._lengths[index] = 0
-            for p, _, _ in self._traverseComponentImpl(index):
+            for _ in self._traverseComponentImpl(index):
                 self._lengths[index] += 1
         return self._lengths[index]
 
@@ -344,7 +344,7 @@ class NormalCurve:
         Recognise the edge indices to which we can resolve the requested
         component of this normal curve.
         """
-        if self._resolveEdges[index] is None:
+        if self._resolvableEdges[index] is None:
             switches = 0
             resEdgeInds = []
             for info in self._traverseComponentImpl(index):
@@ -355,8 +355,8 @@ class NormalCurve:
                         resEdgeInds.append(nextOppEdgeInd)
             if switches != 2:
                 resEdgeInds = []
-            self._resolveEdges[index] = tuple(resEdgeInds)
-        return self._resolveEdges[index]
+            self._resolvableEdges[index] = tuple(resEdgeInds)
+        return self._resolvableEdges[index]
 
     def _bubblePoints( self, e, i ):
         # Find all intersection points that form a bubble around vertex i of
@@ -444,26 +444,6 @@ class NormalCurve:
         while self._weights[ e.index() ] > 0:
             self._isotopeOffEdge( e, 0 )
             e = tet.edge( verts[0], verts[1] )
-
-    def resolveComponent( self, index, check=True, perform=True ):
-        """
-        Checks the eligibility of and/or performs the operation of resolving
-        the requested component of this normal curve.
-
-        If this routine is asked to both check and perform, then it only
-        performs the operation if the check shows it is legal.
-
-        If check is True, then this routine returns True if and only if
-        resolving the requested component is legal. If check is False, then
-        this routine always returns True.
-
-        Pre-condition:
-        --> If this routine is asked to perform the operation without first
-            running the check, then it must be known in advance that
-            resolving the requested component is legal.
-        """
-        #TODO
-        pass
 
     #TODO What's the best way to provide user access to arc coordinates?
     #TODO
