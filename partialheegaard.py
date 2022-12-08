@@ -1,17 +1,21 @@
 """
-A class to represent a normal curve in a boundary surface.
+A class to represent a partial triangulation of a Heegaard splitting.
 """
 from regina import *
 
 
-class NormalCurve:
+class PartialHeegaardSpliting:
     """
-    A normal curve in the boundary of a 3-manifold triangulation.
+    A partial triangulation of a Heegaard splitting, with Heegaard curves
+    represented as a union of a normal curve and a collection of boundary
+    edges.
     """
-    def __init__( self, tri, weights ):
+    #TODO Refactor!
+    def __init__( self, tri, weights, resolvedEdgeIndices=set() ):
         """
-        Create a normal curve with the given edge weights in the boundary of
-        the given triangulation.
+        Create a partial triangulation with a boundary curve, described by
+        the edge weights of a normal curve together (optionally) with some
+        boundary edges.
         """
         # Check that we have the correct number of weights.
         if len(weights) != tri.countEdges():
