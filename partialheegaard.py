@@ -337,20 +337,6 @@ class PartialHeegaardSplitting:
         Pre-condition:
         --> e is a boundary edge of self.triangulation().
         """
-        #TODO Test: Try to work out what's going on by hand.
-        if self._tri.size() > 8:
-            for be in self._tri.edges():
-                if not be.isBoundary():
-                    continue
-                print( "Ind: {}. Emb0: {}. Emb1: {}. Wt: {}.".format(
-                    be.index(),
-                    be.embedding(0),
-                    be.embedding( be.degree() - 1 ),
-                    self._weights[ be.index() ] ) )
-            raise RuntimeError( "END TEST." )
-        #TODO Test.
-        if self._tri.size() > 8:
-            print( "Edge {}.".format( e.index() ) )
         temp = []
         for edge in self._tri.edges():
             if edge == e:
@@ -363,16 +349,10 @@ class PartialHeegaardSplitting:
                 edge.index() ) )
         flipWeight = self._flipWeight(e)
 
-        #TODO Test.
-        if self._tri.size() > 8:
-            print( "Made it to layering." )
         # Layer on new tetrahedron.
         newTet = self._tri.layerOn(e)
         temp.append( ( newTet, Perm4(2,3,0,1), flipWeight, None ) )
 
-        #TODO Test.
-        if self._tri.size() > 8:
-            print( "Made it to weights." )
         # Use temp to compute new weight coordinates.
         newWeights = [0] * self._tri.countEdges()
         newResEdges = set()
@@ -381,9 +361,6 @@ class PartialHeegaardSplitting:
             newWeights[newInd] = wt
             if oldInd in self._resolvedEdges:
                 newResEdges.add(newInd)
-        #TODO Test.
-        if self._tri.size() > 8:
-            print( "Made it to processing weights." )
         self._processWeights(newWeights)
         self._resolvedEdges = newResEdges
 
@@ -450,10 +427,11 @@ class PartialHeegaardSplitting:
             crossDiagInds = []
             for info in self._traverseComponentImpl(index):
                 prevPt, currentPt, nextPt, nextOppEdgeInd = info
-                if ( self._switch[prevPt] and not self._switch[currentPt] and
-                        self._switch[nextPt] ):
-                    # We are in the middle of a bubble of length 2.
-                    crossDiagInds.append( currentPt[0] )
+                if self._switch[prevPt]:
+                    switches += 1
+                    if not self._switch[currentPt] and self._switch[nextPt]:
+                        # We are in the middle of a bubble of length 2.
+                        crossDiagInds.append( currentPt[0] )
             if switches == 2 and crossDiagInds:
                 self._offDiagEdges[index] = tuple(crossDiagInds)
             else:
@@ -544,8 +522,10 @@ class PartialHeegaardSplitting:
         tet = e.embedding(0).tetrahedron()
         verts = e.embedding(0).vertices()
         while self._weights[ e.index() ] > 0:
-            #TODO This check shouldn't be necessary.
+            #TODO This check shouldn't be necessary, but leave this here
+            #   until I have implemented checks in more appropriate places.
             if not self._isotopeOffEdge( e, 0 ):
+                # Print enough info so I can look at this by hand.
                 for be in self._tri.edges():
                     if not be.isBoundary():
                         continue
@@ -554,7 +534,6 @@ class PartialHeegaardSplitting:
                         be.embedding(0),
                         be.embedding( be.degree() - 1 ),
                         self._weights[ be.index() ] ) )
-                #TODO Print enough info so I can look at this by hand.
                 raise RuntimeError( "Isotoping unexpectedly failed." )
             e = tet.edge( verts[0], verts[1] )
 
@@ -623,17 +602,9 @@ class PartialHeegaardSplitting:
         Resolves all components of the underlying curve.
         """
         while not self.allComponentsNice():
-            #TODO Test.
-            size = self._tri.size()
-            print(size)
-            if size > 20:
-                return
             # Try to flip a maximal-weight reducible edge.
             foundMinRed = False
             for e in self._tri.edges():
-                #TODO Test.
-                if size > 8:
-                    print( size, e.index() )
                 if ( not e.isBoundary() or not self.isMaximalWeight(e) or
                         not self.isReducible(e) ):
                     continue
@@ -678,14 +649,16 @@ class PartialHeegaardSplitting:
         # resolvable components first.
         res = True
         while res:
+            res = False
             for i in range( self.countUnresolved() ):
-                res = self.resolveComponent(i)
-                if res:
+                if self.resolveComponent(i):
+                    res = True
                     break
 
         # Now handle the off-diagonals.
         for i in range( self.countUnresolved() ):
-            self.flipEdge( self.recogniseOffDiagonal(i)[0] )
+            self.flipEdge( self._tri.edge(
+                self.recogniseOffDiagonal(i)[0] ) )
         while self.countUnresolved() > 0:
             if not self.resolveComponent(0):
                 raise RuntimeError( "Unexpected unresolvable component." )
@@ -699,12 +672,12 @@ if __name__ == "__main__":
     initTri = Triangulation3.fromIsoSig( "eHbecadjk" )
     compsMsg = "{} component(s):"
     edgeMsg = "After layering on edge {}:"
-    subMsg = "    Switches: {}. Recognise resolvable: {}."
+    subMsg = "    Switches: {}. Resolvable: {}. Off-diagonal: {}."
     msg = "{} components. Switches: {}."
     testCases = [
             ( (0,0,0,2,2,2,3,1,1), 0 ),     # 1-component
             ( (1,0,1,2,3,2,3,2,1), 4 ),     # 2-component
-            ( (3,5,4,2,3,5,4,5,3), 0 ),     # 3-component
+            ( (3,5,4,2,3,5,4,5,3), 2 ),     # 3-component
             ( (1,1,0,1,0,0,0,0,0), 3 ),     # 1-component
             ( (5,5,4,0,5,5,5,4,0), 0 ) ]    # 3-component
 
@@ -718,14 +691,14 @@ if __name__ == "__main__":
         print( compsMsg.format(comps) )
         for c in range(comps):
             print( subMsg.format( phs.countSwitchesInComponent(c),
-                phs.recogniseResolvable(c) ) )
+                phs.recogniseResolvable(c), phs.recogniseOffDiagonal(c) ) )
 
         # Test layering.
         phs.layerOn( tri.edge(e) )
         print( edgeMsg.format(e) )
         for c in range(comps):
             print( subMsg.format( phs.countSwitchesInComponent(c),
-                phs.recogniseResolvable(c) ) )
+                phs.recogniseResolvable(c), phs.recogniseOffDiagonal(c) ) )
 
         # Test bubble/isotopy.
         tri = Triangulation3(initTri)
@@ -737,7 +710,8 @@ if __name__ == "__main__":
             comps = phs.countUnresolved()
             for c in range(comps):
                 print( subMsg.format( phs.countSwitchesInComponent(c),
-                    phs.recogniseResolvable(c) ) )
+                    phs.recogniseResolvable(c),
+                    phs.recogniseOffDiagonal(c) ) )
         #print( "Bubble: {}.".format(
         #    phs._bubblePoints( tri.edge(0), 0 ) ) )
         print()
