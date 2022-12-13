@@ -5,6 +5,7 @@ from regina import *
 
 
 class PartialHeegaardSplitting:
+    #TODO So far, the code doesn't really check for valid inputs.
     """
     A partial triangulation of a Heegaard splitting, with Heegaard curves
     represented as a union of a normal curve (possibly with many components)
@@ -232,7 +233,7 @@ class PartialHeegaardSplitting:
         """
         return self._weights
 
-    def getResolvedEdgeIndices(self):
+    def resolvedEdgeIndices(self):
         """
         Returns a copy of the set of resolved edge indices.
         """
@@ -663,6 +664,84 @@ class PartialHeegaardSplitting:
             if not self.resolveComponent(0):
                 raise RuntimeError( "Unexpected unresolvable component." )
 
+    #TODO This is effectively a static method, so possibly this doesn't
+    #   belong here.
+    def fold( self, e ):
+        #TODO This has a bunch of pre-conditions.
+        """
+        Folds about the given edge boundary e.
+        """
+        emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
+        tet = [ x.tetrahedron() for x in emb ]
+        ver = [ x.vertices() for x in emb ]
+        tet[0].join( ver[0][3], tet[1],
+                ver[1] * Perm4(2,3) * ver[0].inverse() )
+
+    #TODO This is awkward with the current implementation.
+    def constructManifold(self):
+        """
+        Construct a triangulation of the closed 3-manifold represented by
+        the underlying Heegaard diagram.
+        """
+        manifold = Triangulation3( self._tri )
+
+        # Initially, we just know that we need to flip every edge that
+        # corresponds to a resolved component. However, if we need to flip
+        # two edges of a single triangle f, then we first need to split f
+        # into two triangles by flipping the third edge of f. We use a stack
+        # to keep track of all the edges (stored as pairs consisting of a
+        # tetrahedron and an edge number) that we need to flip, as well as
+        # the order in which we need to flip these edges.
+        flipSet = set()
+        flipStack = []
+        for e in self.resolvedEdgeIndices():
+            edge = manifold.edge(e)
+            flipSet.add( edge.index() )
+            emb = edge.embedding(0)
+            flipStack.append( ( emb.tetrahedron(), emb.edge() ) )
+        splitFace = True
+        splitIndices = set()
+        while splitFace:
+            splitFace = False
+
+            # For each boundary face f that we have not yet split, check
+            # whether it is now necessary to split f.
+            for f in manifold.triangles():
+                if ( not f.isBoundary() ) or ( f.index() in splitIndices ):
+                    continue
+
+                # If we need to flip two of the edges of f, then we need to
+                # split f by first flipping its third edge.
+                unflippedEdgeNums = {0,1,2}
+                for e in range(3):
+                    edge = f.edge(e)
+                    if edge.index() in flipSet:
+                        unflippedEdgeNums.remove(e)
+                if len(unflippedEdgeNums) == 1:
+                    edge = f.edge( unflippedEdgeNums.pop() )
+                    flipSet.add( edge.index() )
+                    emb = edge.embedding(0)
+                    flipStack.append( ( emb.tetrahedron(), emb.edge() ) )
+                    splitFace = True
+                    splitIndices.add( f.index() )
+
+        # Flip every edge in flipStack. Since we know that the last few flips
+        # correspond to the resolved curves, we can also fold these now.
+        while flipStack:
+            tet, edgeNum = flipStack.pop()
+            #TODO Optimise!
+            newTet = manifold.layerOn( tet.edge(edgeNum) )
+            if len(flipStack) < self.countComponents():
+                self.fold( newTet.edge(5) )
+
+        # To complete the construction, fold until we have no boundary left.
+        while manifold.hasBoundaryTriangles():
+            for be in manifold.edges():
+                if be.isBoundary():
+                    self.fold(be)
+                    break
+        return manifold
+
     #TODO
     pass
 
@@ -673,7 +752,6 @@ if __name__ == "__main__":
     compsMsg = "{} component(s):"
     edgeMsg = "After layering on edge {}:"
     subMsg = "    Switches: {}. Resolvable: {}. Off-diagonal: {}."
-    msg = "{} components. Switches: {}."
     testCases = [
             ( (0,0,0,2,2,2,3,1,1), 0 ),     # 1-component
             ( (1,0,1,2,3,2,3,2,1), 4 ),     # 2-component
@@ -733,17 +811,24 @@ if __name__ == "__main__":
         print( "Resolve component {}: {}.".format( i, res ) )
         if res:
             print( "Resolved edge indices: {}.".format(
-                phs.getResolvedEdgeIndices() ) )
+                phs.resolvedEdgeIndices() ) )
             print( "Weights: {}.".format( phs.weights() ) )
             break
     print()
 
-    # Test resolving all components (on testCases[1]).
+    # Test full construction (on testCases[1]).
     print( "Resolve all components." )
     tri = Triangulation3(initTri)
     phs = PartialHeegaardSplitting( tri, testCases[1][0] )
     phs.resolveAll()
     print( "Final size: {}. Resolved edges: {}.".format(
-        phs.triangulation().size(), phs.getResolvedEdgeIndices() ) )
+        phs.triangulation().size(), phs.resolvedEdgeIndices() ) )
     print()
+    print( "Full construction." )
+    mfd = phs.constructManifold()
+    sim = Triangulation3(mfd)
+    sim.intelligentSimplify()
+    sim.intelligentSimplify()
+    print( "Final size: {}. Original: {}. Simplified: {}.".format(
+        mfd.size(), mfd.isoSig(), sim.isoSig() ) )
     #TODO
