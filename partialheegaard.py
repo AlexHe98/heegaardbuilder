@@ -657,10 +657,18 @@ class PartialHeegaardSplitting:
                     break
 
         # Now handle the off-diagonals.
-        for i in range( self.countUnresolved() ):
-            self.flipEdge( self._tri.edge(
-                self.recogniseOffDiagonal(i)[0] ) )
+        #TODO Optimise?
+        diag = True
+        while diag:
+            diag = False
+            for i in range( self.countUnresolved() ):
+                diagEdgeInds = self.recogniseOffDiagonal(i)
+                if diagEdgeInds:
+                    diag = True
+                    self.flipEdge( self._tri.edge( diagEdgeInds[0] ) )
+                    break
         while self.countUnresolved() > 0:
+            #TODO Do we need this test?
             if not self.resolveComponent(0):
                 raise RuntimeError( "Unexpected unresolvable component." )
 
@@ -669,13 +677,19 @@ class PartialHeegaardSplitting:
     def fold( self, e ):
         #TODO This has a bunch of pre-conditions.
         """
-        Folds about the given edge boundary e.
+        If possible, folds about the given boundary edge e; returns True if
+        and only if folding is successful.
         """
+        #TODO Following can create invalid vertices.
         emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
         tet = [ x.tetrahedron() for x in emb ]
         ver = [ x.vertices() for x in emb ]
-        tet[0].join( ver[0][3], tet[1],
-                ver[1] * Perm4(2,3) * ver[0].inverse() )
+        if tet[0] == tet[1] and ver[0][3] == ver[1][2]:
+            return False
+        else:
+            tet[0].join( ver[0][3], tet[1],
+                    ver[1] * Perm4(2,3) * ver[0].inverse() )
+            return True
 
     #TODO This is awkward with the current implementation.
     def constructManifold(self):
@@ -738,8 +752,8 @@ class PartialHeegaardSplitting:
         while manifold.hasBoundaryTriangles():
             for be in manifold.edges():
                 if be.isBoundary():
-                    self.fold(be)
-                    break
+                    if self.fold(be):
+                        break
         return manifold
 
     #TODO
@@ -757,7 +771,8 @@ if __name__ == "__main__":
             ( (1,0,1,2,3,2,3,2,1), 4 ),     # 2-component
             ( (3,5,4,2,3,5,4,5,3), 2 ),     # 3-component
             ( (1,1,0,1,0,0,0,0,0), 3 ),     # 1-component
-            ( (5,5,4,0,5,5,5,4,0), 0 ) ]    # 3-component
+            ( (5,5,4,0,5,5,5,4,0), 0 ),     # 3-component
+            ( (1,2,3,4,5,2,3,4,1), 0 ) ]    # 2-component
 
     # Basic operation tests.
     for w, e in testCases:
@@ -816,19 +831,23 @@ if __name__ == "__main__":
             break
     print()
 
-    # Test full construction (on testCases[1]).
-    print( "Resolve all components." )
-    tri = Triangulation3(initTri)
-    phs = PartialHeegaardSplitting( tri, testCases[1][0] )
-    phs.resolveAll()
-    print( "Final size: {}. Resolved edges: {}.".format(
-        phs.triangulation().size(), phs.resolvedEdgeIndices() ) )
-    print()
-    print( "Full construction." )
-    mfd = phs.constructManifold()
-    sim = Triangulation3(mfd)
-    sim.intelligentSimplify()
-    sim.intelligentSimplify()
-    print( "Final size: {}. Original: {}. Simplified: {}.".format(
-        mfd.size(), mfd.isoSig(), sim.isoSig() ) )
+    # Test full construction (on testCases[1] and testCases[5]).
+    for c in {1,5}:
+        print( "Resolve all components, case {}.".format(c) )
+        tri = Triangulation3(initTri)
+        phs = PartialHeegaardSplitting( tri, testCases[c][0] )
+        phs.resolveAll()
+        print( "Final size: {}. Resolved edges: {}.".format(
+            phs.triangulation().size(), phs.resolvedEdgeIndices() ) )
+        print()
+        print( "Full construction, case {}.".format(c) )
+        mfd = phs.constructManifold()
+        print( "Valid: {}. Closed: {}. Orbl: {}.".format(
+            mfd.isValid(), mfd.isClosed(), mfd.isOrientable() ) )
+        sim = Triangulation3(mfd)
+        sim.intelligentSimplify()
+        sim.intelligentSimplify()
+        print( "Final size: {}. Original: {}. Simplified: {}.".format(
+            mfd.size(), mfd.isoSig(), sim.isoSig() ) )
+        print()
     #TODO
