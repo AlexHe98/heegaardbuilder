@@ -4,6 +4,8 @@ A class to represent a partial triangulation of a Heegaard splitting.
 from regina import *
 
 
+#TODO Should probably make almost all of the methods underscored, since most
+#   of them should never need to be accessed by users.
 class PartialHeegaardSplitting:
     #TODO So far, the code doesn't really check for valid inputs.
     """
@@ -691,14 +693,111 @@ class PartialHeegaardSplitting:
                     ver[1] * Perm4(2,3) * ver[0].inverse() )
             return True
 
-    #TODO This is awkward with the current implementation.
+    #TODO This is awkward with the current implementation. I should probably
+    #   be careful to distinguish different "states" for self._tri depending
+    #   on whether we have started "closing up".
+    def _attemptFold(self):
+        #TODO Consider repurposing this code to include improving vertices,
+        #   as this should minimise the number of iterations.
+
+        # Assuming boundary component 0 of the underlying triangulation is a
+        # 2-sphere boundary, tries to (at least partially) fill this 2-sphere
+        # with a 3-ball by folding a pair of boundary faces together.
+        #
+        # Returns True if and only if such a fold is successfully performed.
+        #
+        # The idea is to iterate through each boundary edge e, and consider
+        # the square formed by the two boundary triangles incident to e.
+        # We could potentially fold this square across either of its two
+        # diagonals (for one of these folds, we have to layer one tetrahedron
+        # first), so we check whether these folds are "safe".
+        bc = self._tri.boundaryComponent(0)
+        bdry = bc.build()
+        layer = None # Edge that we can fold after layering, if necessary.
+        for e in bdry.edges():
+            fac = [ emb.triangle() for emb in e.embeddings() ]
+            if fac[0] == fac[1]:
+                continue
+            ver = [ emb.vertices() for emb in e.embeddings() ]
+
+            # First check whether it is safe to fold directly over e.
+            if fac[0].vertex( ver[0][2] ) == fac[1].vertex( ver[1][2] ):
+                # The fold is safe, so perform it.
+                self.fold( bc.edge( e.index() ) )
+                return True
+
+            # Now, if necessary, check whether it would be safe to fold after
+            # layering across e.
+            if ( layer is None ) and ( e.vertex(0) == e.vertex(1) ):
+                # Only perform this fold later on, if it is really necessary.
+                layer = bc.edge( e.index() )
+                #TODO Test.
+                print( fac[0], fac[1] )
+
+        # We couldn't directly fold, but maybe we can fold after layering.
+        if layer is None:
+            return False
+        else:
+            #TODO Test.
+            print( self._tri.isoSig(), bc.detail(), layer.isBoundary() )
+            emb = [ emb for emb in layer.embeddings() ]
+            print( emb[0].tetrahedron().triangle( emb[0].vertices()[3] ) )
+            print( emb[-1].tetrahedron().triangle( emb[-1].vertices()[2] ) )
+            newTet = self._tri.layerOn(layer)
+            self.fold( newTet.edge(5) )
+            return True
+
+    def fillBall(self):
+        """
+        Assuming the underlying triangulation has 2-sphere boundary, fills
+        this 2-sphere with a 3-ball.
+        """
+        while self._tri.hasBoundaryTriangles():
+            if self._attemptFold():
+                continue
+
+            # Since folding was not possible, we know (in particular) that we
+            # have no vertices of degree less than three. Our goal now is to
+            # repeatedly layer until folding is possible; at worst, this is
+            # guaranteed to succeed once we have reduced the degree of a
+            # boundary vertex to two. Start by finding a boundary vertex of
+            # minimum degree.
+            bc = self._tri.boundaryComponent(0)
+            bdry = bc.build()
+            minVert = bdry.vertex(0)
+            for i in range( 1, bdry.countVertices() ):
+                v = bdry.vertex(i)
+                deg = v.degree()
+                if deg < minVert.degree():
+                    minVert = v
+                    if deg == 3:
+                        break
+
+            # Pre-compute a list of tet-edgeNum pairs across which we layer.
+            layer = []
+            for i in range( minVert.degree() - 2 ):
+                vertEmb = minVert.embedding(i)
+                ind = vertEmb.triangle().edge(
+                        vertEmb.vertices()[2] ).index()
+                edgeEmb = bc.edge(ind).embedding(0)
+                layer.append(
+                        ( edgeEmb.tetrahedron(), edgeEmb.edge() ) )
+
+            # Keep layering until we can fold.
+            while True:
+                tet, edgeNum = layer.pop()
+                self._tri.layerOn( tet.edge(edgeNum) )
+                if self._attemptFold():
+                    break
+
+    #TODO This is awkward with the current implementation. I should probably
+    #   be careful to distinguish different "states" for self._tri depending
+    #   one whether we have started "closing up".
     def constructManifold(self):
         """
         Construct a triangulation of the closed 3-manifold represented by
         the underlying Heegaard diagram.
         """
-        manifold = Triangulation3( self._tri )
-
         # Initially, we just know that we need to flip every edge that
         # corresponds to a resolved component. However, if we need to flip
         # two edges of a single triangle f, then we first need to split f
@@ -709,7 +808,7 @@ class PartialHeegaardSplitting:
         flipSet = set()
         flipStack = []
         for e in self.resolvedEdgeIndices():
-            edge = manifold.edge(e)
+            edge = self._tri.edge(e)
             flipSet.add( edge.index() )
             emb = edge.embedding(0)
             flipStack.append( ( emb.tetrahedron(), emb.edge() ) )
@@ -720,7 +819,7 @@ class PartialHeegaardSplitting:
 
             # For each boundary face f that we have not yet split, check
             # whether it is now necessary to split f.
-            for f in manifold.triangles():
+            for f in self._tri.triangles():
                 if ( not f.isBoundary() ) or ( f.index() in splitIndices ):
                     continue
 
@@ -744,17 +843,14 @@ class PartialHeegaardSplitting:
         while flipStack:
             tet, edgeNum = flipStack.pop()
             #TODO Optimise!
-            newTet = manifold.layerOn( tet.edge(edgeNum) )
+            newTet = self._tri.layerOn( tet.edge(edgeNum) )
             if len(flipStack) < self.countComponents():
                 self.fold( newTet.edge(5) )
 
         # To complete the construction, fold until we have no boundary left.
-        while manifold.hasBoundaryTriangles():
-            for be in manifold.edges():
-                if be.isBoundary():
-                    if self.fold(be):
-                        break
-        return manifold
+        self.fillBall()
+        #TODO Return the triangulation, or just a copy?
+        return self._tri
 
     #TODO
     pass
