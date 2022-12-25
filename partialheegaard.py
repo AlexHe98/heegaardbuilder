@@ -697,9 +697,6 @@ class PartialHeegaardSplitting:
     #   be careful to distinguish different "states" for self._tri depending
     #   on whether we have started "closing up".
     def _attemptFold(self):
-        #TODO Consider repurposing this code to include improving vertices,
-        #   as this should minimise the number of iterations.
-
         # Assuming boundary component 0 of the underlying triangulation is a
         # 2-sphere boundary, tries to (at least partially) fill this 2-sphere
         # with a 3-ball by folding a pair of boundary faces together.
@@ -712,9 +709,9 @@ class PartialHeegaardSplitting:
         # diagonals (for one of these folds, we have to layer one tetrahedron
         # first), so we check whether these folds are "safe".
         bc = self._tri.boundaryComponent(0)
-        bdry = bc.build()
+        built = bc.build()
         layer = None # Edge that we can fold after layering, if necessary.
-        for e in bdry.edges():
+        for e in built.edges():
             fac = [ emb.triangle() for emb in e.embeddings() ]
             if fac[0] == fac[1]:
                 continue
@@ -723,26 +720,26 @@ class PartialHeegaardSplitting:
             # First check whether it is safe to fold directly over e.
             if fac[0].vertex( ver[0][2] ) == fac[1].vertex( ver[1][2] ):
                 # The fold is safe, so perform it.
-                self.fold( bc.edge( e.index() ) )
+                #NOTE Regina promises an edge-index correspondence between bc
+                #   and built, but this sometimes fails for some reason.
+                #self.fold( bc.edge( e.index() ) )
+                self.fold(
+                        bc.triangle( fac[0].index() ).edge( ver[0][2] ) )
                 return True
 
             # Now, if necessary, check whether it would be safe to fold after
             # layering across e.
             if ( layer is None ) and ( e.vertex(0) == e.vertex(1) ):
                 # Only perform this fold later on, if it is really necessary.
-                layer = bc.edge( e.index() )
-                #TODO Test.
-                print( fac[0], fac[1] )
+                #NOTE Regina promises an edge-index correspondence between bc
+                #   and built, but this sometimes fails for some reason.
+                #layer = bc.edge( e.index() )
+                layer = bc.triangle( fac[0].index() ).edge( ver[0][2] )
 
         # We couldn't directly fold, but maybe we can fold after layering.
         if layer is None:
             return False
         else:
-            #TODO Test.
-            print( self._tri.isoSig(), bc.detail(), layer.isBoundary() )
-            emb = [ emb for emb in layer.embeddings() ]
-            print( emb[0].tetrahedron().triangle( emb[0].vertices()[3] ) )
-            print( emb[-1].tetrahedron().triangle( emb[-1].vertices()[2] ) )
             newTet = self._tri.layerOn(layer)
             self.fold( newTet.edge(5) )
             return True
@@ -763,10 +760,10 @@ class PartialHeegaardSplitting:
             # boundary vertex to two. Start by finding a boundary vertex of
             # minimum degree.
             bc = self._tri.boundaryComponent(0)
-            bdry = bc.build()
-            minVert = bdry.vertex(0)
-            for i in range( 1, bdry.countVertices() ):
-                v = bdry.vertex(i)
+            built = bc.build()
+            minVert = built.vertex(0)
+            for i in range( 1, built.countVertices() ):
+                v = built.vertex(i)
                 deg = v.degree()
                 if deg < minVert.degree():
                     minVert = v
@@ -777,9 +774,14 @@ class PartialHeegaardSplitting:
             layer = []
             for i in range( minVert.degree() - 2 ):
                 vertEmb = minVert.embedding(i)
-                ind = vertEmb.triangle().edge(
-                        vertEmb.vertices()[2] ).index()
-                edgeEmb = bc.edge(ind).embedding(0)
+                #NOTE Regina promises an edge-index correspondence between bc
+                #   and built, but this sometimes fails for some reason.
+                #ind = vertEmb.triangle().edge(
+                #        vertEmb.vertices()[2] ).index()
+                #edgeEmb = bc.edge(ind).embedding(0)
+                facInd = vertEmb.triangle().index()
+                edgeNum = vertEmb.vertices()[2]
+                edgeEmb = bc.triangle(facInd).edge(edgeNum).embedding(0)
                 layer.append(
                         ( edgeEmb.tetrahedron(), edgeEmb.edge() ) )
 
@@ -852,12 +854,10 @@ class PartialHeegaardSplitting:
         #TODO Return the triangulation, or just a copy?
         return self._tri
 
-    #TODO
-    pass
-
 
 # Test code.
 if __name__ == "__main__":
+    #TODO Tidy up tests.
     initTri = Triangulation3.fromIsoSig( "eHbecadjk" )
     compsMsg = "{} component(s):"
     edgeMsg = "After layering on edge {}:"
@@ -946,4 +946,3 @@ if __name__ == "__main__":
         print( "Final size: {}. Original: {}. Simplified: {}.".format(
             mfd.size(), mfd.isoSig(), sim.isoSig() ) )
         print()
-    #TODO
