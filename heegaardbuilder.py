@@ -1,12 +1,13 @@
 """
-A class to represent a partial triangulation of a Heegaard splitting.
+A class for building triangulations from a Heegaard diagram.
 """
 from regina import *
 
 
 #TODO Should probably make almost all of the methods underscored, since most
 #   of them should never need to be accessed by users.
-class PartialHeegaardSplitting:
+class HeegaardBuilder:
+    #TODO Rewrite documentation.
     #TODO So far, the code doesn't really check for valid inputs.
     """
     A partial triangulation of a Heegaard splitting, with Heegaard curves
@@ -873,57 +874,57 @@ if __name__ == "__main__":
     # Basic operation tests.
     for w, e in testCases:
         tri = Triangulation3(initTri)
-        phs = PartialHeegaardSplitting( tri, w )
+        hb = HeegaardBuilder( tri, w )
 
         # Test components.
-        comps = phs.countUnresolved()
+        comps = hb.countUnresolved()
         print( compsMsg.format(comps) )
         for c in range(comps):
-            print( subMsg.format( phs.countSwitchesInComponent(c),
-                phs.recogniseResolvable(c), phs.recogniseOffDiagonal(c) ) )
+            print( subMsg.format( hb.countSwitchesInComponent(c),
+                hb.recogniseResolvable(c), hb.recogniseOffDiagonal(c) ) )
 
         # Test layering.
-        phs.layerOn( tri.edge(e) )
+        hb.layerOn( tri.edge(e) )
         print( edgeMsg.format(e) )
         for c in range(comps):
-            print( subMsg.format( phs.countSwitchesInComponent(c),
-                phs.recogniseResolvable(c), phs.recogniseOffDiagonal(c) ) )
+            print( subMsg.format( hb.countSwitchesInComponent(c),
+                hb.recogniseResolvable(c), hb.recogniseOffDiagonal(c) ) )
 
         # Test bubble/isotopy.
         tri = Triangulation3(initTri)
-        phs = PartialHeegaardSplitting( tri, w )
-        iso = phs._isotopeOffEdge( tri.edge(0), 0 )
+        hb = HeegaardBuilder( tri, w )
+        iso = hb._isotopeOffEdge( tri.edge(0), 0 )
         print( "Isotopy: {}.".format(iso) )
         if iso:
-            print( phs.weights() )
-            comps = phs.countUnresolved()
+            print( hb.weights() )
+            comps = hb.countUnresolved()
             for c in range(comps):
-                print( subMsg.format( phs.countSwitchesInComponent(c),
-                    phs.recogniseResolvable(c),
-                    phs.recogniseOffDiagonal(c) ) )
+                print( subMsg.format( hb.countSwitchesInComponent(c),
+                    hb.recogniseResolvable(c),
+                    hb.recogniseOffDiagonal(c) ) )
         #print( "Bubble: {}.".format(
-        #    phs._bubblePoints( tri.edge(0), 0 ) ) )
+        #    hb._bubblePoints( tri.edge(0), 0 ) ) )
         print()
 
     # Test clearing edge 7 of testCases[4].
     print( "Clear edge." )
     tri = Triangulation3(initTri)
-    phs = PartialHeegaardSplitting( tri, testCases[4][0] )
-    phs._clearEdge( tri.edge(7) )
-    print( phs.weights() )
+    hb = HeegaardBuilder( tri, testCases[4][0] )
+    hb._clearEdge( tri.edge(7) )
+    print( hb.weights() )
     print()
 
     # Test resolving (to edge 7 of testCases[4]).
     print( "Resolve one component." )
     tri = Triangulation3(initTri)
-    phs = PartialHeegaardSplitting( tri, testCases[4][0] )
+    hb = HeegaardBuilder( tri, testCases[4][0] )
     for i in range(3):
-        res = phs.resolveComponent(0)
+        res = hb.resolveComponent(0)
         print( "Resolve component {}: {}.".format( i, res ) )
         if res:
             print( "Resolved edge indices: {}.".format(
-                phs.resolvedEdgeIndices() ) )
-            print( "Weights: {}.".format( phs.weights() ) )
+                hb.resolvedEdgeIndices() ) )
+            print( "Weights: {}.".format( hb.weights() ) )
             break
     print()
 
@@ -931,13 +932,13 @@ if __name__ == "__main__":
     for c in {1,5}:
         print( "Resolve all components, case {}.".format(c) )
         tri = Triangulation3(initTri)
-        phs = PartialHeegaardSplitting( tri, testCases[c][0] )
-        phs.resolveAll()
+        hb = HeegaardBuilder( tri, testCases[c][0] )
+        hb.resolveAll()
         print( "Final size: {}. Resolved edges: {}.".format(
-            phs.triangulation().size(), phs.resolvedEdgeIndices() ) )
+            hb.triangulation().size(), hb.resolvedEdgeIndices() ) )
         print()
         print( "Full construction, case {}.".format(c) )
-        mfd = phs.constructManifold()
+        mfd = hb.constructManifold()
         print( "Valid: {}. Closed: {}. Orbl: {}.".format(
             mfd.isValid(), mfd.isClosed(), mfd.isOrientable() ) )
         sim = Triangulation3(mfd)
