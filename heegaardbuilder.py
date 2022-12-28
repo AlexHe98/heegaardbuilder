@@ -10,19 +10,51 @@ class HeegaardBuilder:
     #TODO Rewrite documentation.
     #TODO So far, the code doesn't really check for valid inputs.
     """
-    A partial triangulation of a Heegaard splitting, with Heegaard curves
-    represented as a union of a normal curve (possibly with many components)
-    and a collection of boundary edges.
+    Implements an algorithm for constructing a 3-manifold triangulation from
+    a set of Heegaard curves on a given handlebody.
 
-    Each Heegaard curve given by a component of the normal curve is
-    *unresolved*, and each Heegaard curve given by a boundary edge is
-    *resolved*.
+    The handlebody should be given as a (one-vertex) layered triangulation,
+    as described in Jaco and Rubinstein's unpublished paper from 2006. The
+    Heegaard curves are represented as a union of a normal curve (typically
+    with many components) and a collection of boundary edges. Each Heegaard
+    curve given by a component of the normal curve is *unresolved*, and each
+    Heegaard curve given by a boundary edge is *resolved*.
+
+    The final triangulation is constructed in such a way that its cutwidth
+    (and hence also its treewidth) is bounded above by 4g-2, where g is the
+    genus of the initial handlebody.
     """
     def __init__( self, tri, weights, resolvedEdgeIndices=set() ):
         """
-        Create a partial triangulation with a boundary curve, described by
-        the edge weights of a normal curve together (optionally) with some
-        boundary edges.
+        Modifies tri so that it becomes a one-vertex triangulation of the
+        closed 3-manifold corresponding to the Heegaard curves represented by
+        the given weights and resolvedEdgeIndices.
+
+        The given triangulation tri should be a handlebody built using a
+        (one-vertex) layered construction, as described in Jaco and
+        Rubinstein's unpublished paper from 2006.
+
+        The given weights should describe a normal curve c in the boundary
+        surface of tri as follows:
+            For each i such that e = tri.edge(i) is a boundary edge,
+            weights[i] should give the edge weight of c at e.
+        The components of this curve c correspond to unresolved Heegaard
+        curves.
+        
+        The resolvedEdgeIndices give indices of boundary edges of tri; for
+        each i in resolvedEdgeIndices, the edge tri.edge(i) gives a resolved
+        Heegaard curve.
+
+        Since our set of Heegaard curves must be disjoint, note that:
+        --> For each i in resolvedEdgeIndices, weights[i] must be 0.
+        --> Since the edges corresponding to resolved curves all meet at the
+            vertex of tri, we insist that they all meet tangentially (rather
+            than transversely).
+
+        We emphasise that this class directly modifies the given handlebody
+        triangulation; if you wish to keep hold of your initial handlebody
+        triangulation, you can simply pass a clone of your handlebody to
+        this class.
         """
         # Check that we have the correct number of weights.
         if len(weights) != tri.countEdges():
@@ -31,8 +63,12 @@ class HeegaardBuilder:
         self._tri = tri
         self._resolvedEdges = set(resolvedEdgeIndices)
         self._processWeights(weights)
+        #TODO Do the full construction right away!
 
     def _processWeights( self, weights ):
+        """
+        Update internal data to reflect a new set of edge weights.
+        """
         self._weights = tuple(weights)
 
         # Check that the given weights satisfy the matching constraints.
@@ -69,12 +105,15 @@ class HeegaardBuilder:
         # - Components that are isotopic to off-diagonals.
         # - Lengths of components.
         # - Number of switches.
-        self._resolvableEdges = [None] * self.countUnresolved()
-        self._offDiagEdges = [None] * self.countUnresolved()
-        self._lengths = [None] * self.countUnresolved()
-        self._switchCounts = [None] * self.countUnresolved()
+        self._resolvableEdges = [None] * self._countUnresolved()
+        self._offDiagEdges = [None] * self._countUnresolved()
+        self._lengths = [None] * self._countUnresolved()
+        self._switchCounts = [None] * self._countUnresolved()
 
     def _checkMatching(self):
+        """
+        Do the underlying edge weights satisfy the matching constraints?
+        """
         for face in self._tri.triangles():
             if not face.isBoundary():
                 continue
@@ -95,6 +134,10 @@ class HeegaardBuilder:
         return True
 
     def _initialisePoints(self):
+        """
+        Initialise intersection points for the underlying normal curve, so
+        that we can compute components using union-find.
+        """
         # Represent each intersection point using a pair consisting of the
         # edge index and the order of the point along the edge.
         for edgeInd in range( self._tri.countEdges() ):
@@ -104,7 +147,9 @@ class HeegaardBuilder:
                 self._points.add( ( edgeInd, p ) )
 
     def _find( self, p ):
-        # Find operation for union-find.
+        """
+        Find the current root for the given intersection point p.
+        """
         while self._parent[p] != p:
             # Use path-halving: replace the current parent of p with its
             # current grandparent, and then go to this grandparent.
@@ -113,7 +158,10 @@ class HeegaardBuilder:
         return p
 
     def _union( self, p, q ):
-        # Union operation for union-find.
+        """
+        Take the union of the components containing the given intersection
+        points p and q.
+        """
         p = self._find(p)
         q = self._find(q)
         if p == q:
@@ -131,6 +179,10 @@ class HeegaardBuilder:
         self._roots.remove(q)
 
     def _countComponentsImpl(self):
+        """
+        Union-find implementation for counting the components of the
+        underlying normal curve.
+        """
         # Piece together the components of our normal curve by looking at one
         # boundary triangle at a time.
         for face in self._tri.triangles():
@@ -214,6 +266,9 @@ class HeegaardBuilder:
             #   get rid of self._arcCoords entirely?
 
     def _findSwitches(self):
+        """
+        Find switches in the underlying normal curve.
+        """
         for e in self._tri.edges():
             edgeInd = e.index()
             for i in range( self._weights[edgeInd] ):
@@ -223,44 +278,43 @@ class HeegaardBuilder:
                         self._adjCutVerts[p][0] != self._adjCutVerts[p][1] )
 
     def triangulation(self):
+        #TODO This should probably return the completed triangulation.
         """
         Returns a copy of the triangulation whose boundary contains this
         normal curve.
         """
         return Triangulation3( self._tri )
 
-    def weights(self):
-        """
-        Returns the tuple of edge weights that define the unresolved
-        components of the underlying curve.
-        """
-        return self._weights
-
-    def resolvedEdgeIndices(self):
+    #TODO Consider removing this entirely.
+    def _resolvedEdgeIndices(self):
         """
         Returns a copy of the set of resolved edge indices.
         """
         return set( self._resolvedEdges )
 
-    def countUnresolved(self):
+    def _countUnresolved(self):
         """
         Returns the number of unresolved components of the underlying curve.
         """
         return len( self._roots )
 
-    def countResolved(self):
+    def _countResolved(self):
         """
         Returns the number of resolved components of the underlying curve.
         """
         return len( self._resolvedEdges )
 
-    def countComponents(self):
+    def _countComponents(self):
         """
         Returns the number of components of the underlying curve.
         """
-        return self.countUnresolved() + self.countResolved()
+        return self._countUnresolved() + self._countResolved()
 
     def _traverseCurve( self, startPt, d ):
+        #TODO More detailed documentation.
+        """
+        Traverse an unresolved Heegaard curve starting at the given startPt.
+        """
         # Either traverse in "direction 0" or "direction 1", depending on
         # whether d is 0 or 1.
         prevPt, currentPt, nextPt, nextOppEdgeInd = (
@@ -278,19 +332,16 @@ class HeegaardBuilder:
                     self._adjOppEdgeInds[nextPt][indNext] )
             yield prevPt, currentPt, nextPt, nextOppEdgeInd
 
-    def _traverseComponentImpl( self, index ):
-        for t in self._traverseCurve( self._roots[index], 0 ):
-            yield t
-
-    def traverseComponent( self, index ):
+    def _traverseComponent( self, index ):
+        #TODO More detailed documentation.
         """
         Iterates through the intersection points of the requested unresolved
         component of the underlying curve.
         """
-        for _, p, _, _ in self._traverseComponentImpl(index):
-            yield p
+        for t in self._traverseCurve( self._roots[index], 0 ):
+            yield t
 
-    def countSwitchesInComponent( self, index ):
+    def _countSwitchesInComponent( self, index ):
         """
         Returns the number of switches in the requested unresolved component
         of the underlying curve.
@@ -300,13 +351,15 @@ class HeegaardBuilder:
         """
         if self._switchCounts[index] is None:
             self._switchCounts[index] = 0
-            for p in self.traverseComponent(index):
+            for _, p, _, _ in self._traverseComponent(index):
                 if self._switch[p]:
                     self._switchCounts[index] += 1
         return self._switchCounts[index]
 
     def _flipWeightChange( self, e ):
-        # Compute how the weight changes after flipping the edge e.
+        """
+        Compute how the weight changes after flipping the given edge e.
+        """
         # Start by counting "corner arcs" that meet e; we will lose the
         # corresponding intersection points after flipping e.
         weightChange = 0
@@ -332,9 +385,13 @@ class HeegaardBuilder:
         return weightChange
 
     def _flipWeight( self, e ):
+        """
+        Compute the weight of the new edge that would result from flipping
+        the given edge e.
+        """
         return self._weights[ e.index() ] + self._flipWeightChange(e)
 
-    def layerOn( self, e ):
+    def _layerEdge( self, e ):
         """
         Layer a new tetrahedron across the edge e.
 
@@ -368,7 +425,7 @@ class HeegaardBuilder:
         self._processWeights(newWeights)
         self._resolvedEdges = newResEdges
 
-    def flipEdge( self, e ):
+    def _flipEdge( self, e ):
         """
         Flip the edge e by either removing a layered tetrahedron, or layering
         a new tetrahedron across this edge.
@@ -377,9 +434,9 @@ class HeegaardBuilder:
         --> e is a boundary edge of self.triangulation().
         """
         #TODO Optimise!
-        self.layerOn(e)
+        self._layerEdge(e)
 
-    def componentLength( self, index ):
+    def _componentLength( self, index ):
         """
         Returns the length of the requested unresolved component of the
         underlying curve.
@@ -389,13 +446,13 @@ class HeegaardBuilder:
         """
         if self._lengths[index] is None:
             self._lengths[index] = 0
-            for _ in self._traverseComponentImpl(index):
+            for _ in self._traverseComponent(index):
                 self._lengths[index] += 1
         return self._lengths[index]
 
     #TODO What's the best way to provide user access to arc coordinates?
 
-    def recogniseResolvable( self, index ):
+    def _recogniseResolvable( self, index ):
         """
         Recognise the edge indices to which we can resolve the requested
         unresolved component of the underlying curve.
@@ -406,7 +463,7 @@ class HeegaardBuilder:
         if self._resolvableEdges[index] is None:
             switches = 0
             resEdgeInds = []
-            for info in self._traverseComponentImpl(index):
+            for info in self._traverseComponent(index):
                 _, currentPt, nextPt, nextOppEdgeInd = info
                 if self._switch[currentPt]:
                     switches += 1
@@ -418,7 +475,7 @@ class HeegaardBuilder:
                 self._resolvableEdges[index] = tuple()
         return self._resolvableEdges[index]
 
-    def recogniseOffDiagonal( self, index ):
+    def _recogniseOffDiagonal( self, index ):
         """
         Recognise the edge indices across which the requested unresolved
         component forms an off-diagonal.
@@ -429,7 +486,7 @@ class HeegaardBuilder:
         if self._offDiagEdges[index] is None:
             switches = 0
             crossDiagInds = []
-            for info in self._traverseComponentImpl(index):
+            for info in self._traverseComponent(index):
                 prevPt, currentPt, nextPt, nextOppEdgeInd = info
                 if self._switch[prevPt]:
                     switches += 1
@@ -443,8 +500,10 @@ class HeegaardBuilder:
         return self._offDiagEdges[index]
 
     def _bubblePoints( self, e, i ):
-        # Find all intersection points that form a bubble around vertex i of
-        # edge e.
+        """
+        Find all intersection points that form a bubble around vertex i of
+        edge e.
+        """
         if self._weights[ e.index() ] == 0:
             return set()
         bubble = set()
@@ -475,8 +534,10 @@ class HeegaardBuilder:
             return bubble
 
     def _isotopeOffEdge( self, e, i ):
-        # Try to isotope the arc that goes around vertex i of edge e, and
-        # return True if and only if this was possible.
+        """
+        Try to isotope the arc that goes around vertex i of edge e, and
+        return True if and only if this was possible.
+        """
         # Start by ruling out special cases:
         # - We have no bubble around vertex i because the curve turns away
         #   from vertex i in both directions.
@@ -492,7 +553,7 @@ class HeegaardBuilder:
             pt = ( edgeInd, 0 )
         else:
             pt = ( edgeInd, self._weights[edgeInd] - 1 )
-        if lb == self.componentLength(
+        if lb == self._componentLength(
                 self._roots.index( self._find(pt) ) ):
             return False
 
@@ -521,8 +582,10 @@ class HeegaardBuilder:
         return True
 
     def _clearEdge( self, e ):
-        # Assuming that a component of this normal curve resolves to the edge
-        # e, isotope everything off e to make resolving possible.
+        """
+        Assuming that a component of the underlying normal curve resolves to
+        the edge e, isotope everything off e to make resolving possible.
+        """
         tet = e.embedding(0).tetrahedron()
         verts = e.embedding(0).vertices()
         while self._weights[ e.index() ] > 0:
@@ -541,19 +604,19 @@ class HeegaardBuilder:
                 raise RuntimeError( "Isotoping unexpectedly failed." )
             e = tet.edge( verts[0], verts[1] )
 
-    def resolveComponent( self, index ):
+    def _resolveComponent( self, index ):
         """
         Checks whether it is possible to resolve the requested unresolved
         component, and if so resolves this component.
         """
-        resEdgeInds = self.recogniseResolvable(index)
+        resEdgeInds = self._recogniseResolvable(index)
         if not resEdgeInds:
             return False
 
         # First compute how edge weights would reduce as a result of
         # resolving the requested component.
         weightChanges = [0] * self._tri.countEdges()
-        for _, p, _, _ in self._traverseComponentImpl(index):
+        for _, p, _, _ in self._traverseComponent(index):
             weightChanges[ p[0] ] -= 1
 
         # Clear the edge, and then resolve the requested component by simply
@@ -567,25 +630,25 @@ class HeegaardBuilder:
         self._processWeights(newWeights)
         return True
 
-    def isHeegaard(self):
+    def _isHeegaard(self):
         """
         Does the underlying curve give a valid Heegaard diagram?
         """
         #TODO Check handlebody, number of curves, and separating?
         pass
 
-    def allComponentsNice(self):
+    def _allComponentsNice(self):
         """
         Are all components of the underlying curve "nice" in the sense that
         they are either resolved, resolvable or isotopic to an off-diagonal?
         """
-        for i in range( self.countUnresolved() ):
-            if ( not self.recogniseResolvable(i) and
-                    not self.recogniseOffDiagonal(i) ):
+        for i in range( self._countUnresolved() ):
+            if ( not self._recogniseResolvable(i) and
+                    not self._recogniseOffDiagonal(i) ):
                 return False
         return True
 
-    def isMaximalWeight( self, e ):
+    def _isMaximalWeight( self, e ):
         """
         Is the edge e maximal-weight?
 
@@ -595,25 +658,25 @@ class HeegaardBuilder:
         """
         return ( self._weights[ e.index() ] == max( self._weights ) )
 
-    def isReducible( self, e ):
+    def _isReducible( self, e ):
         """
         Is the edge e reducible?
         """
         return ( self._flipWeightChange(e) < 0 )
 
-    def resolveAll(self):
+    def _resolveAll(self):
         """
         Resolves all components of the underlying curve.
         """
-        while not self.allComponentsNice():
+        while not self._allComponentsNice():
             # Try to flip a maximal-weight reducible edge.
             foundMinRed = False
             for e in self._tri.edges():
-                if ( not e.isBoundary() or not self.isMaximalWeight(e) or
-                        not self.isReducible(e) ):
+                if ( not e.isBoundary() or not self._isMaximalWeight(e) or
+                        not self._isReducible(e) ):
                     continue
                 foundMinRed = True
-                self.flipEdge(e)
+                self._flipEdge(e)
                 break
             if foundMinRed:
                 continue
@@ -621,8 +684,8 @@ class HeegaardBuilder:
             # If there is no maximal-weight reducible edge, then try to
             # resolve a component.
             resolved = False
-            for i in range( self.countUnresolved() ):
-                if self.resolveComponent(i):
+            for i in range( self._countUnresolved() ):
+                if self._resolveComponent(i):
                     resolved = True
                     break
             if resolved:
@@ -632,7 +695,7 @@ class HeegaardBuilder:
             # number of switches by flipping a maximal-weight edge.
             foundSwitch = False
             for e in self._tri.edges():
-                if not e.isBoundary() or not self.isMaximalWeight(e):
+                if not e.isBoundary() or not self._isMaximalWeight(e):
                     continue
 
                 # Check whether flipping this maximal-weight edge e would
@@ -643,7 +706,7 @@ class HeegaardBuilder:
                             self._switch[ self._adjPoints[pt][0] ] and
                             self._switch[ self._adjPoints[pt][1] ] ):
                         foundSwitch = True
-                        self.flipEdge(e)
+                        self._flipEdge(e)
                         break
                 if foundSwitch:
                     break
@@ -654,8 +717,8 @@ class HeegaardBuilder:
         res = True
         while res:
             res = False
-            for i in range( self.countUnresolved() ):
-                if self.resolveComponent(i):
+            for i in range( self._countUnresolved() ):
+                if self._resolveComponent(i):
                     res = True
                     break
 
@@ -664,20 +727,20 @@ class HeegaardBuilder:
         diag = True
         while diag:
             diag = False
-            for i in range( self.countUnresolved() ):
-                diagEdgeInds = self.recogniseOffDiagonal(i)
+            for i in range( self._countUnresolved() ):
+                diagEdgeInds = self._recogniseOffDiagonal(i)
                 if diagEdgeInds:
                     diag = True
-                    self.flipEdge( self._tri.edge( diagEdgeInds[0] ) )
+                    self._flipEdge( self._tri.edge( diagEdgeInds[0] ) )
                     break
-        while self.countUnresolved() > 0:
+        while self._countUnresolved() > 0:
             #TODO Do we need this test?
-            if not self.resolveComponent(0):
+            if not self._resolveComponent(0):
                 raise RuntimeError( "Unexpected unresolvable component." )
 
     #TODO This is effectively a static method, so possibly this doesn't
     #   belong here.
-    def fold( self, e ):
+    def _fold( self, e ):
         #TODO This has a bunch of pre-conditions.
         """
         If possible, folds about the given boundary edge e; returns True if
@@ -698,12 +761,13 @@ class HeegaardBuilder:
     #   be careful to distinguish different "states" for self._tri depending
     #   on whether we have started "closing up".
     def _attemptFold(self):
-        # Assuming boundary component 0 of the underlying triangulation is a
-        # 2-sphere boundary, tries to (at least partially) fill this 2-sphere
-        # with a 3-ball by folding a pair of boundary faces together.
-        #
-        # Returns True if and only if such a fold is successfully performed.
-        #
+        """
+        Assuming boundary component 0 of the underlying triangulation is a
+        2-sphere boundary, tries to either partially or completely fill this
+        2-sphere with a 3-ball by folding a pair of boundary faces together.
+
+        Returns True if and only if such a fold is successfully performed.
+        """
         # The idea is to iterate through each boundary edge e, and consider
         # the square formed by the two boundary triangles incident to e.
         # We could potentially fold this square across either of its two
@@ -723,8 +787,8 @@ class HeegaardBuilder:
                 # The fold is safe, so perform it.
                 #NOTE Regina promises an edge-index correspondence between bc
                 #   and built, but this sometimes fails for some reason.
-                #self.fold( bc.edge( e.index() ) )
-                self.fold(
+                #self._fold( bc.edge( e.index() ) )
+                self._fold(
                         bc.triangle( fac[0].index() ).edge( ver[0][2] ) )
                 return True
 
@@ -742,10 +806,10 @@ class HeegaardBuilder:
             return False
         else:
             newTet = self._tri.layerOn(layer)
-            self.fold( newTet.edge(5) )
+            self._fold( newTet.edge(5) )
             return True
 
-    def fillBall(self):
+    def _fillBall(self):
         """
         Assuming the underlying triangulation has 2-sphere boundary, fills
         this 2-sphere with a 3-ball.
@@ -796,7 +860,7 @@ class HeegaardBuilder:
     #TODO This is awkward with the current implementation. I should probably
     #   be careful to distinguish different "states" for self._tri depending
     #   one whether we have started "closing up".
-    def constructManifold(self):
+    def _constructManifold(self):
         """
         Construct a triangulation of the closed 3-manifold represented by
         the underlying Heegaard diagram.
@@ -810,7 +874,7 @@ class HeegaardBuilder:
         # the order in which we need to flip these edges.
         flipSet = set()
         flipStack = []
-        for e in self.resolvedEdgeIndices():
+        for e in self._resolvedEdgeIndices():
             edge = self._tri.edge(e)
             flipSet.add( edge.index() )
             emb = edge.embedding(0)
@@ -847,11 +911,11 @@ class HeegaardBuilder:
             tet, edgeNum = flipStack.pop()
             #TODO Optimise!
             newTet = self._tri.layerOn( tet.edge(edgeNum) )
-            if len(flipStack) < self.countComponents():
-                self.fold( newTet.edge(5) )
+            if len(flipStack) < self._countComponents():
+                self._fold( newTet.edge(5) )
 
         # To complete the construction, fold until we have no boundary left.
-        self.fillBall()
+        self._fillBall()
         #TODO Return the triangulation, or just a copy?
         return self._tri
 
@@ -877,18 +941,18 @@ if __name__ == "__main__":
         hb = HeegaardBuilder( tri, w )
 
         # Test components.
-        comps = hb.countUnresolved()
+        comps = hb._countUnresolved()
         print( compsMsg.format(comps) )
         for c in range(comps):
-            print( subMsg.format( hb.countSwitchesInComponent(c),
-                hb.recogniseResolvable(c), hb.recogniseOffDiagonal(c) ) )
+            print( subMsg.format( hb._countSwitchesInComponent(c),
+                hb._recogniseResolvable(c), hb._recogniseOffDiagonal(c) ) )
 
         # Test layering.
-        hb.layerOn( tri.edge(e) )
+        hb._layerEdge( tri.edge(e) )
         print( edgeMsg.format(e) )
         for c in range(comps):
-            print( subMsg.format( hb.countSwitchesInComponent(c),
-                hb.recogniseResolvable(c), hb.recogniseOffDiagonal(c) ) )
+            print( subMsg.format( hb._countSwitchesInComponent(c),
+                hb._recogniseResolvable(c), hb._recogniseOffDiagonal(c) ) )
 
         # Test bubble/isotopy.
         tri = Triangulation3(initTri)
@@ -896,12 +960,12 @@ if __name__ == "__main__":
         iso = hb._isotopeOffEdge( tri.edge(0), 0 )
         print( "Isotopy: {}.".format(iso) )
         if iso:
-            print( hb.weights() )
-            comps = hb.countUnresolved()
+            print( hb._weights )
+            comps = hb._countUnresolved()
             for c in range(comps):
-                print( subMsg.format( hb.countSwitchesInComponent(c),
-                    hb.recogniseResolvable(c),
-                    hb.recogniseOffDiagonal(c) ) )
+                print( subMsg.format( hb._countSwitchesInComponent(c),
+                    hb._recogniseResolvable(c),
+                    hb._recogniseOffDiagonal(c) ) )
         #print( "Bubble: {}.".format(
         #    hb._bubblePoints( tri.edge(0), 0 ) ) )
         print()
@@ -911,7 +975,7 @@ if __name__ == "__main__":
     tri = Triangulation3(initTri)
     hb = HeegaardBuilder( tri, testCases[4][0] )
     hb._clearEdge( tri.edge(7) )
-    print( hb.weights() )
+    print( hb._weights )
     print()
 
     # Test resolving (to edge 7 of testCases[4]).
@@ -919,12 +983,12 @@ if __name__ == "__main__":
     tri = Triangulation3(initTri)
     hb = HeegaardBuilder( tri, testCases[4][0] )
     for i in range(3):
-        res = hb.resolveComponent(0)
+        res = hb._resolveComponent(0)
         print( "Resolve component {}: {}.".format( i, res ) )
         if res:
             print( "Resolved edge indices: {}.".format(
-                hb.resolvedEdgeIndices() ) )
-            print( "Weights: {}.".format( hb.weights() ) )
+                hb._resolvedEdgeIndices() ) )
+            print( "Weights: {}.".format( hb._weights ) )
             break
     print()
 
@@ -933,12 +997,13 @@ if __name__ == "__main__":
         print( "Resolve all components, case {}.".format(c) )
         tri = Triangulation3(initTri)
         hb = HeegaardBuilder( tri, testCases[c][0] )
-        hb.resolveAll()
+        hb._resolveAll()
+        #TODO Rename HeegaardBuilder.triangulation()?
         print( "Final size: {}. Resolved edges: {}.".format(
-            hb.triangulation().size(), hb.resolvedEdgeIndices() ) )
+            hb.triangulation().size(), hb._resolvedEdgeIndices() ) )
         print()
         print( "Full construction, case {}.".format(c) )
-        mfd = hb.constructManifold()
+        mfd = hb._constructManifold()
         print( "Valid: {}. Closed: {}. Orbl: {}.".format(
             mfd.isValid(), mfd.isClosed(), mfd.isOrientable() ) )
         sim = Triangulation3(mfd)
