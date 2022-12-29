@@ -5,7 +5,7 @@ from regina import *
 
 
 class HeegaardBuilder:
-    #TODO Rewrite documentation.
+    #TODO Proofread documentation.
     #TODO So far, the code doesn't really check for valid inputs.
     """
     Implements an algorithm for constructing a 3-manifold triangulation from
@@ -13,10 +13,13 @@ class HeegaardBuilder:
 
     The handlebody should be given as a (one-vertex) layered triangulation,
     as described in Jaco and Rubinstein's unpublished paper from 2006. The
-    Heegaard curves are represented as a union of a normal curve (typically
-    with many components) and a collection of boundary edges. Each Heegaard
-    curve given by a component of the normal curve is *unresolved*, and each
-    Heegaard curve given by a boundary edge is *resolved*.
+    Heegaard curves are represented as a union of:
+    --> a normal curve (typically with many components) in the boundary
+        surface; and
+    --> a collection of boundary edges.
+    Each Heegaard curve given by a component of the normal curve is
+    *unresolved*, and each Heegaard curve given by a boundary edge is
+    *resolved*.
 
     The final triangulation is constructed in such a way that its cutwidth
     (and hence also its treewidth) is bounded above by 4g-2, where g is the
@@ -61,8 +64,15 @@ class HeegaardBuilder:
         self._tri = tri
         self._resolvedEdges = set(resolvedEdgeIndices)
         self._processWeights(weights)
+        #TODO This takes away flexibility. Do I want this?
         self._resolveAll()
         self._constructManifold()
+
+    def triangulation(self):
+        """
+        Returns the final triangulation.
+        """
+        return self._tri
 
     def _processWeights( self, weights ):
         """
@@ -80,12 +90,10 @@ class HeegaardBuilder:
         self._initialisePoints()
         self._parent = { p: p for p in self._points }
         self._size = { p: 1 for p in self._points }
-        #TODO Do we really need arc coordinates?
         # As a by-product of this, we will also:
         # - compute coordinates for this normal curve in terms of its arcs;
         #   and
         # - assign an index to each component of this normal curve.
-        self._arcCoords = [None] * self._tri.countTriangles()
         self._roots = list( self._points )
         # This is also a good opportunity to record useful information about
         # how each component of this normal curve traverses the boundary of
@@ -261,8 +269,6 @@ class HeegaardBuilder:
                         self._adjCutVerts[pm].append(0)
                     else:
                         self._adjCutVerts[pm].append(1)
-            #TODO Cache arcCounts (as a tuple) in self._arcCoords, or just
-            #   get rid of self._arcCoords entirely?
 
     def _findSwitches(self):
         """
@@ -275,21 +281,6 @@ class HeegaardBuilder:
                 cutVerts = self._adjCutVerts[p]
                 self._switch[p] = (
                         self._adjCutVerts[p][0] != self._adjCutVerts[p][1] )
-
-    def triangulation(self):
-        #TODO This should probably return the completed triangulation.
-        """
-        Returns a copy of the triangulation whose boundary contains this
-        normal curve.
-        """
-        return Triangulation3( self._tri )
-
-    #TODO Consider removing this entirely.
-    def _resolvedEdgeIndices(self):
-        """
-        Returns a copy of the set of resolved edge indices.
-        """
-        return set( self._resolvedEdges )
 
     def _countUnresolved(self):
         """
@@ -310,9 +301,19 @@ class HeegaardBuilder:
         return self._countUnresolved() + self._countResolved()
 
     def _traverseCurve( self, startPt, d ):
-        #TODO More detailed documentation.
         """
-        Traverse an unresolved Heegaard curve starting at the given startPt.
+        Traverse the unresolved Heegaard curve containing the given startPt.
+
+        Traversal begins at startPt, and proceeds in the direction towards
+        self._adjPoints[startPt][d].
+
+        At each intersection point P along the curve that we traverse, this
+        routine yields a 4-tuple consisting of:
+        (0) The point that occurs before P in the direction of traversal.
+        (1) The point P.
+        (2) The point Q that occurs after P in the direction of traversal.
+        (3) The index of the edge parallel to the normal arc that connects
+            the points P and Q.
         """
         # Either traverse in "direction 0" or "direction 1", depending on
         # whether d is 0 or 1.
@@ -332,10 +333,16 @@ class HeegaardBuilder:
             yield prevPt, currentPt, nextPt, nextOppEdgeInd
 
     def _traverseComponent( self, index ):
-        #TODO More detailed documentation.
         """
-        Iterates through the intersection points of the requested unresolved
-        component of the underlying curve.
+        Traverses the requested unresolved component.
+
+        At each intersection point P that we encounter during this traveral,
+        this routine yields a 4-tuple consisting of:
+        (0) The point that occurs before P in the direction of traversal.
+        (1) The point P.
+        (2) The point Q that occurs after P in the direction of traversal.
+        (3) The index of the edge parallel to the normal arc that connects
+            the points P and Q.
         """
         for t in self._traverseCurve( self._roots[index], 0 ):
             yield t
@@ -448,8 +455,6 @@ class HeegaardBuilder:
             for _ in self._traverseComponent(index):
                 self._lengths[index] += 1
         return self._lengths[index]
-
-    #TODO What's the best way to provide user access to arc coordinates?
 
     def _recogniseResolvable( self, index ):
         """
@@ -867,7 +872,7 @@ class HeegaardBuilder:
         # the order in which we need to flip these edges.
         flipSet = set()
         flipStack = []
-        for e in self._resolvedEdgeIndices():
+        for e in self._resolvedEdges:
             edge = self._tri.edge(e)
             flipSet.add( edge.index() )
             emb = edge.embedding(0)
@@ -993,7 +998,7 @@ if __name__ == "__main__":
 #        print( "Resolve component {}: {}.".format( i, res ) )
 #        if res:
 #            print( "Resolved edge indices: {}.".format(
-#                hb._resolvedEdgeIndices() ) )
+#                hb._resolvedEdges ) )
 #            print( "Weights: {}.".format( hb._weights ) )
 #            break
 #    print()
@@ -1006,7 +1011,7 @@ if __name__ == "__main__":
 #        hb._resolveAll()
 #        #TODO Rename HeegaardBuilder.triangulation()?
 #        print( "Final size: {}. Resolved edges: {}.".format(
-#            hb.triangulation().size(), hb._resolvedEdgeIndices() ) )
+#            hb.triangulation().size(), hb._resolvedEdges ) )
 #        print()
 #        print( "Full construction, case {}.".format(c) )
 #        mfd = hb._constructManifold()
