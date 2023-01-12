@@ -14,7 +14,7 @@ class HeegaardBuilder:
     #   started closing up?) the triangulation, because otherwise the
     #   handlebody checks may fail when cloning.
     #TODO Should we perhaps implement *simultaneous* resolving once we know
-    #   that all components as "nice"?
+    #   that all components are "immediately resolvable"?
     """
     Implements the various subroutines needed to execute an algorithm for
     constructing a 3-manifold triangulation from a set of Heegaard curves on
@@ -840,15 +840,77 @@ class HeegaardBuilder:
         pass
 
     #TODO Make public?
-    def _allComponentsNice(self):
+    def _allCompImmedRes(self):
         """
-        Are all components of the underlying curve "nice" in the sense that
-        they are either resolved, resolvable or isotopic to an off-diagonal?
+        Are all components of the underlying curve "immediately resolvable"
+        in the sense that they are either resolved, resolvable or isotopic to
+        an off-diagonal?
         """
         for i in range( self.countUnresolved() ):
             if ( not self.recogniseResolvable(i) and
                     not self._recogniseOffDiagonal(i) ):
                 return False
+        return True
+
+    def _simulResolve(self):
+        """
+        Checks whether all components of the underlying curve are
+        "immediately resolvable", and if so resolves all components.
+
+        A component of the underlying curve is "immediately resolvable" if it
+        is either resolved, resolvable, or isotopic to an off-diagonal. In
+        addition to performing the resolutions, this routine also returns
+        True if and only if all components were initially "immediately
+        resolvable" (in which case these components will all have become
+        resolved by the time this routine terminates).
+        """
+        # Find all the edges to which we will resolve.
+        #NOTE There is no need to avoid re-running the recogniseResolvable()
+        #   and _recogniseOffDiagonal() routines because the results get
+        #   cached anyway.
+        resEdges = []
+        flipEdges = []
+        refTetInds = dict()
+        for i in range( self.countUnresolved() ):
+            #TODO We are making arbitrary choices here. Should I allow
+            #   experimentation with these choices?
+            if self.recogniseResolvable(i):
+                emb = self._tri.edge(
+                        self.recogniseResolvable(i)[0] ).embedding(0)
+                resEdges.append( ( emb.tetrahedron(), emb.edge() ) )
+            elif self._recogniseOffDiagonal(i):
+                emb = self._tri.edge(
+                        self._recogniseOffDiagonal(i)[0] ).embedding(0)
+                tet = emb.tetrahedron()
+
+                # Update both flipEdges and refTetInds.
+                flipEdges.append( ( tet, emb.edge() ) )
+                if tet.index() in refTetInds:
+                    refTetInds[ tet.index() ].add( tet.index() )
+                else:
+                    refTetInds[ tet.index() ] = { tet.index() }
+            else:
+                # Component i is not "immediately resolvable".
+                return False
+
+        # Since we will ultimately be resolving *all* of our components, we
+        # might as well set all the weights to zero now.
+        self._processWeights( [0] * self._tri.countEdges() )
+
+        # Add all the new resolved edge indices that arise from resolvable
+        # components.
+        for tet, edgeNum in resEdges:
+            self._resolvedEdges.add( tet.edge(edgeNum).index() )
+
+        # Now deal with the off-diagonals by performing the requisite flips,
+        # and then adding the new edges as resolved edges.
+        while flipEdges:
+            tet, edgeNum = flipEdges.pop()
+            newEdge = self._flipEdgeImpl(
+                    tet.edge(edgeNum), [ flipEdges, refTetInds ] )
+            self._resolvedEdges.add( newEdge.index() )
+
+        # All done!
         return True
 
     def _isMaximalWeight( self, e ):
@@ -913,64 +975,11 @@ class HeegaardBuilder:
                     yield e
                     break
 
-    def _resolveAllImpl(self):
-        #TODO Why is it safe to resolve everything in series? Isn't it
-        #   possible to make a curve unresolvable after clearing an edge?
-        """
-        Assuming that every component of the underlying curve is nice,
-        resolves all these components.
-
-        A component is "nice" if it is either resolved, resolvable, or
-        isotopic to an off-diagonal.
-
-        Pre-condition:
-        --> Every component of the underlying curve must be nice in the sense
-            described above.
-        """
-        # We assume that every component is nice, and we want to resolve all
-        # the components that are either resolvable or isotopic to an
-        # off-diagonal. Handle the resolvable components first.
-        res = True
-        while res:
-            res = False
-            for i in range( self.countUnresolved() ):
-                #TODO We make a choice here. Do I want to allow
-                #   experimentation with this?
-                if self.resolveComponent(i):
-                    res = True
-                    break
-
-        # Now handle the off-diagonals.
-        diag = True
-        while diag:
-            diag = False
-            for i in range( self.countUnresolved() ):
-                diagEdgeInds = self._recogniseOffDiagonal(i)
-                if diagEdgeInds:
-                    diag = True
-                    #TODO We make a choice here. Do I want to allow
-                    #   experimentation with this?
-                    self.flipEdge(
-                            self._tri.edge( diagEdgeInds[0] ) )
-                    break
-        while self.countUnresolved() > 0:
-            #TODO Do we need this test?
-            if not self.resolveComponent(0):
-                raise RuntimeError( "Unexpected unresolvable component." )
-            #TODO
-            pass
-
-    #TODO Version of this that resolves until we have multiple choices. There
-    #   might be a lot of common code, in which case in might make sense to
-    #   have a private _resolveAllImpl() routine.
-    #TODO Possibly a more sensible way to minimise repeated code is to have
-    #   separate implementations for things like finding maximal-weight
-    #   reducible edges.
     def resolveAll(self):
         """
         Resolves all components of the underlying normal curve.
         """
-        while not self._allComponentsNice():
+        while not self._allCompImmedRes():
             # Try to flip a maximal-weight reducible edge.
             foundMaxRed = False
             for e in self._maxReducibleEdges():
@@ -1000,43 +1009,47 @@ class HeegaardBuilder:
             if not foundSwitch:
                 raise RuntimeError( "Algorithm failed unexpectedly." )
 
-        #TODO Why is it safe to resolve everything in sequence? Isn't it
-        #   possible to make a curve unresolvable after clearing an edge?
-        #TODO Replace this with self._resolveAllImpl()?
         # Once we break out of the above loop, we know that every component
-        # is either resolvable or isotopic to an off-diagonal. Handle the
-        # resolvable components first.
-        res = True
-        while res:
-            res = False
-            for i in range( self.countUnresolved() ):
-                if self.resolveComponent(i):
-                    res = True
-                    break
-
-        # Now handle the off-diagonals.
-        diag = True
-        while diag:
-            diag = False
-            for i in range( self.countUnresolved() ):
-                diagEdgeInds = self._recogniseOffDiagonal(i)
-                if diagEdgeInds:
-                    diag = True
-                    self.flipEdge(
-                            self._tri.edge( diagEdgeInds[0] ) )
-                    break
-        while self.countUnresolved() > 0:
-            #TODO Do we need this test?
-            if not self.resolveComponent(0):
-                raise RuntimeError( "Unexpected unresolvable component." )
+        # is "immediately resolvable", so we simply perform the resolutions.
+        self._simulResolve()
 
     def resolveUntilChoice(self):
-        #TODO Document return value. Return None if we finish resolving.
         """
         Attempts to resolve all components of the underlying normal curve,
-        but stops when we reach a situation where we have multiple choices.
+        but stops when we reach a situation where we have multiple choices
+        while attempting to make all components "immediately resolvable".
+
+        A component is "immediately resolvable" if it is either resolved,
+        resolvable, or isotopic to an off-diagonal.
+
+        This routine returns None if it successfully resolves all components
+        without having to make arbitrary choices while attempting to make all
+        components "immediately resolvable". However, if such a choice is
+        required, then this routine stops attempting to resolve all
+        components, and instead returns a 2-element tuple T detailing the set
+        of choices that it could have made:
+        --> If this routine is attempting to flip a maximal-weight reducible
+            edge and it is faced with more than one choice for such an edge,
+            then the returned tuple T will consist of:
+            (0) The string "Reduce".
+            (1) A list of all maximal-weight reducible edges in the
+                underlying triangulation.
+        --> If this routine is attempting to resolve a single component and
+            it is faced with more than one choice for such a resolution, then
+            the returned tuple T will consist of:
+            (0) The string "Resolve".
+            (1) A list of all pairs (i, e), where i is the index of a
+                resolvable component c and e is the index of an edge to which
+                we can resolve c.
+        --> If this routine is attempting to flip a maximal-weight edge in
+            such a way that the flip reduces the number of switches, and if
+            it is face with more than one choice for such a flip, then the
+            returned tuple T will consist of:
+            (0) The string "Switch".
+            (1) A list of all maximal-weight edges e such that flipping e
+                reduces the number of switches.
         """
-        while not self._allComponentsNice():
+        while not self._allCompImmedRes():
             # Do we have one or more maximal-weight reducible edges?
             maxRed = []
             for e in self._maxReducibleEdges():
@@ -1079,13 +1092,41 @@ class HeegaardBuilder:
             else:
                 raise RuntimeError( "Algorithm unexpectedly failed." )
 
-        #TODO Why is it safe to resolve everything in sequence? Isn't it
-        #   possible to make a curve unresolvable after clearing an edge?
-        #TODO Use self._resolveAllImpl()?
         # If we break out of the above loop, then we know that every
-        # component is either resolvable or isotopic to an off-diagonal.
-        #TODO
-        pass
+        # component is "immediately resolvable", so we simply perform the
+        # resolutions.
+        #TODO This currently makes arbitrary choices that the user has no
+        #   control over.
+        self._simulResolve()
+        return None
+
+    def resolveInAllWays(self):
+        """
+        Yields instances of HeegaardBuilder corresponding to all possible
+        ways to resolve the components of the underlying curve.
+
+        This routine never modifies this instance of HeegaardBuilder.
+        """
+        hb = self.clone()
+        choices = hb.resolveUntilChoice()
+        if choices is None:
+            yield hb
+        else:
+            if choices[0] in { "Reduce", "Switch" }:
+                for edge in choices[1]:
+                    hbClone = hb.clone()
+                    hbClone.flipEdge( hbClone._tri.edge( edge.index() ) )
+                    for r in hbClone.resolveInAllWays():
+                        yield r
+            elif choices[0] == "Resolve":
+                for i, e in choices[1]:
+                    hbClone = hb.clone()
+                    hbClone.resolveComponent( i, e )
+                    for r in hbClone.resolveInAllWays():
+                        yield r
+            else:
+                raise RuntimeError(
+                        "Unknown operation \"{}\".".format( choices[0] ) )
 
     def _fold( self, e ):
         #TODO This has a bunch of pre-conditions.
@@ -1350,6 +1391,28 @@ if __name__ == "__main__":
         sim.intelligentSimplify()
         print( "Final size: {}. Original: {}. Simplified: {}.".format(
             newTri.size(), newTri.isoSig(), sim.isoSig() ) )
+        print()
+
+        #TODO Make following preliminary test more comprehensive.
+        hbChoice = HeegaardBuilder( Triangulation3(initTri), w )
+        count = 0
+        minSize = None
+        minSig = None
+        for r in hbChoice.resolveInAllWays():
+            count += 1
+            r.attachOtherHandlebody()
+            resTri = r.triangulation()
+            if minSize is None or resTri.size() < minSize:
+                minSize = resTri.size()
+                minSig = resTri.isoSig()
+        print( "Total: {}.".format(count) )
+        print( "MinSize: {}. MinSig: {}.".format( minSize, minSig ) )
+        #choices = hbChoice.resolveUntilChoice()
+        #if choices is not None:
+        #    print( "Resolved until following choices: {}.".format(
+        #        choices[0] ) )
+        #    for x in choices[1]:
+        #        print( "    {}".format(x) )
         print()
 #    # Basic operation tests.
 #    for w, e in testCases:
