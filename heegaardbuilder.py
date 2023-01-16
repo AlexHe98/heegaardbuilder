@@ -6,77 +6,140 @@ from regina import *
 
 class HeegaardBuilder:
     #TODO Proofread documentation.
-    #TODO So far, the code doesn't really check for valid inputs.
-    #TODO For checking handlebody, don't do a conclusive test. Just use
-    #   knowsHandlebody() to weed out obviously bad cases. This obviously
-    #   needs to be clearly documented.
-    #TODO We need to store a boolean that says whether we have closed up (or
-    #   started closing up?) the triangulation, because otherwise the
-    #   handlebody checks may fail when cloning.
-    #TODO Should we perhaps implement *simultaneous* resolving once we know
-    #   that all components are "immediately resolvable"?
+    #TODO Finish documenting and/or implementing "sensibleness" checks.
     """
     Implements the various subroutines needed to execute an algorithm for
-    constructing a 3-manifold triangulation from a set of Heegaard curves on
-    a given handlebody.
+    taking an orientable one-vertex triangulation T with a single boundary
+    component, and filling with a handlebody according to a system of curves
+    on the boundary of T.
 
-    The handlebody must be represented using a one-vertex triangulation
-    (preferably using a layered construction, for the reason outlined below).
-    The Heegaard curves are represented as a union of:
+    The system of curves must satisfy the following conditions:
+    (1) It has g components, where g is the genus of the boundary of T.
+    (2) These g components are all disjoint.
+    (3) Cutting the boundary surface of T along this system gives a sphere
+        with 2g punctures.
+    Thus, if the triangulation T is itself a handlebody, then T with this
+    system of curves describes a genus-g Heegaard splitting of an orientable
+    closed 3-manifold M, and filling with a handlebody gives a triangulation
+    T' of M in which the Heegaard surface appears as a subcomplex of the
+    2-skeleton of T'.
+
+    If, in addition, T is actually a *layered* triangulation of a handlebody
+    (as described in Jaco and Rubinstein's unpublished 2006 paper titled
+    "Layered-triangulations of 3-manifolds"), then the method of construction
+    implemented by this class guarantees that the triangulation T' will have
+    cutwidth at most 4g-2. Note that because cutwidth is an upper bound for
+    treewidth, this means that the treewidth of T' will also be at most 4g-2.
+
+    We encode the system of curves as a union of:
     --> a normal curve (typically with many components) in the boundary
         surface; and
     --> a collection of boundary edges.
-    Each Heegaard curve given by a component of the normal curve is
-    *unresolved*, and each Heegaard curve given by a boundary edge is
-    *resolved*.
-
-    If, in addition, the initial handlebody uses a layered construction---as
-    described in Jaco and Rubinstein's unpublished 2006 paper titled
-    "Layered-triangulations of 3-manifolds"---then the method of construction
-    implemented by this class guarantees that the cutwidth of the
-    triangulation is always bounded above by 4g-2, where g is the genus of
-    the initial handlebody. Note that because cutwidth is an upper bound for
-    treewidth, this means that the treewidth of the triangulation is also
-    always bounded above by 4g-2.
+    Each curve given by a component of the normal curve is *unresolved*, and
+    each curve given by a boundary edge is *resolved*.
     """
-    def __init__( self, tri, weights, resolvedEdgeIndices=set() ):
+    def __init__( self, tri, weights, resolvedEdgeIndices=set(),
+            check=True ):
         """
         Initialises a HeegaardBuilder object that provides the subroutines
         needed to turn tri into a one-vertex triangulation of the closed
-        3-manifold corresponding to the Heegaard curves represented by the
-        given weights and resolvedEdgeIndices.
+        3-manifold obtained by filling with a handlebody according to the
+        system of curves described by the given weights and
+        resolvedEdgeIndices.
 
-        The given triangulation tri should be a one-vertex triangulation of
-        a handlebody. As described in the class notes, it is preferable for
-        tri to use a layered construction, as this will guarantee an upper
-        bound on the cutwidth of the triangulations that this class
-        constructs.
+        The given triangulation tri should be valid, orientable, one-vertex,
+        and have exactly one boundary component. Note that the one-vertex
+        requirement implies that tri is connected.
 
         The given weights should describe a normal curve c in the boundary
         surface of tri as follows:
         --> We should have len(weights) == tri.countEdges().
         --> For each i such that e = tri.edge(i) is a boundary edge,
             weights[i] should give the edge weight of c at e.
-        The components of this curve c correspond to unresolved Heegaard
-        curves.
-        
-        The resolvedEdgeIndices give indices of boundary edges of tri; for
-        each i in resolvedEdgeIndices, the edge tri.edge(i) gives a resolved
-        Heegaard curve.
+        --> For each i such that tri.edge(i) is *not* a boundary edge,
+            weights[i] should be 0.
+        The components of this normal curve correspond to unresolved curves.
+        Since the given weights need to describe a normal curve, it is worth
+        noting that there are some matching constraints that need to be
+        satisfied.
 
-        Since our set of Heegaard curves must be disjoint, note that:
+        The resolvedEdgeIndices give additional curves in the boundary of
+        tri. Specifically, for each i in resolvedEdgeIndices, the edge
+        tri.edge(i) gives a resolved curve. By default, resolvedEdgeIndices
+        is empty, so there are no resolved curves.
+
+        We enforce some restrictions to ensure that the components of our
+        system of curves are disjoint:
         --> For each i in resolvedEdgeIndices, weights[i] must be 0.
         --> Since the edges corresponding to resolved curves all meet at the
             vertex of tri, we insist that they all meet tangentially (rather
             than transversely).
-        """
-        # Check that we have the correct number of weights.
-        if len(weights) != tri.countEdges():
-            raise ValueError( "Wrong number of edge weights!" )
 
+        If check is True (the default), then this initialiser checks that the
+        conditions mentioned above are all satisfied; this initialiser will
+        raise ValueError if any of these conditions fail. These checks can be
+        skipped by setting check to False, but this could lead to unexpected
+        Exceptions later on.
+
+        It is also important to note that this initialiser never checks
+        whether the given system of curves cuts the boundary surface B of T
+        into a sphere with 2g punctures, where g is the genus of B. If this
+        condition fails, then some of the subroutines provided by this class
+        may raise ValueErrors.
+        """
+        # Begin checks, if asked to perform such checks.
+        if check:
+            # Check that tri is valid, orientable, one-vertex, and has
+            # exactly one boundary component.
+            if not tri.isValid():
+                raise ValueError( "Triangulation is not valid." )
+            if not tri.isOrientable():
+                raise ValueError( "Triangulation is not orientable." )
+            if tri.countVertices() != 1:
+                raise ValueError( "Triangulation is not one-vertex." )
+            if tri.countBoundaryComponents() != 1:
+                raise ValueError( "Triangulation doesn't have exactly " +
+                        "one boundary component." )
+
+            # Check that the given weights are sensible.
+            if len(weights) != tri.countEdges():
+                raise ValueError( "Wrong number of edge weights!" )
+            hasNonZeroWt = False
+            for i, wt in enumerate(weights):
+                if wt < 0:
+                    raise ValueError( "Weights must be non-negative." )
+                elif wt > 0:
+                    if not tri.edge(i).isBoundary():
+                        raise ValueError( "Only boundary edges can have " +
+                                "positive weight." )
+                    if i in resolvedEdgeIndices:
+                        raise ValueError( "The unresolved curves should " +
+                                "be disjoint from the resolved curves." )
+                    hasNonZeroWt = True
+
+            # Check that all the resolved curves meet tangentially.
+            stack = []
+            bc = tri.boundaryComponent(0)
+            built = bc.build()
+            for emb in built.vertex(0).embeddings():
+                triFace = bc.triangle( emb.triangle().index() )
+                edgeInd = triFace.edge( emb.vertices()[2] ).index()
+                if edgeInd in resolvedEdgeIndices:
+                    if edgeInd in stack:
+                        topInd = stack.pop()
+                        if topInd != edgeInd:
+                            raise ValueError( "Resolved curves " +
+                                    "must meet tangentially, " +
+                                    "not transversely." )
+                    else:
+                        stack.append(edgeInd)
+        # End checks.
+
+        # Initialise.
         self._tri = Triangulation3(tri)
         self._resolvedEdges = set(resolvedEdgeIndices)
-        self._processWeights(weights)
+        self._processWeights( weights, check )
+        #TODO Document any conditions that are checked in _processWeights().
 
     def clone(self):
         """
@@ -85,10 +148,12 @@ class HeegaardBuilder:
         Note that the underlying triangulation of the cloned instance will be
         a *copy* of the underlying triangulation of this instance.
         """
+        # Assume that this instance is sensible, so don't perform checks.
         return HeegaardBuilder(
                 Triangulation3( self._tri ),
                 self._weights,
-                set(self._resolvedEdges) )
+                set(self._resolvedEdges),
+                False ) # Set check to be False.
 
     def triangulation(self):
         """
@@ -96,14 +161,14 @@ class HeegaardBuilder:
         """
         return Triangulation3( self._tri )
 
-    def _processWeights( self, weights ):
+    def _processWeights( self, weights, check=True ):
         """
         Update internal data to reflect a new set of edge weights.
         """
         self._weights = tuple(weights)
 
         # Check that the given weights satisfy the matching constraints.
-        if not self._checkMatching():
+        if check and not self._checkMatching():
             raise ValueError(
                     "Edge weights fail the matching constraints!" )
 
@@ -716,6 +781,7 @@ class HeegaardBuilder:
         # - The bubble meets every intersection point of a component, which
         #   means that we have either: (1) instead of isotoping, we should
         #   resolve the curve; or (2) the curve is a vertex link.
+        #TODO Is the second dot point correct?
         bubble = self._bubblePoints( e, i )
         lb = len(bubble)
         if lb == 0:
@@ -767,6 +833,10 @@ class HeegaardBuilder:
                 #TODO Sometimes we can't isotope because we actually have to
                 #   resolve another curve first.
                 #TODO What about off-diagonals?
+                #TODO Since this routine is intended to be private anyway,
+                #   can I deal with obstructions to isotoping by simply
+                #   assuming in the pre-conditions that there are no such
+                #   obstructions?
                 # Print enough info so I can look at this by hand.
                 for be in self._tri.edges():
                     if not be.isBoundary():
@@ -1276,14 +1346,14 @@ class HeegaardBuilder:
                 if self._attemptFold():
                     break
 
-    def attachOtherHandlebody(self):
+    def fillHandlebody(self):
         """
-        If our Heegard curves are all resolved, then performs the topological
-        operation of attaching another handlebody according to these curves.
+        If all of our curves are resolved, then fills with a handlebody H in
+        such a way that each curve bounds a disc in H.
 
-        Returns True if and only if all our Heegaard curves resolved; this
-        routine modifies the underlying triangulation when and only when it
-        returns True.
+        Returns True if and only if all our curves resolved; this routine
+        modifies the underlying triangulation when and only when it returns
+        True.
         """
         if self.countUnresolved() > 0:
             return False
@@ -1379,7 +1449,7 @@ if __name__ == "__main__":
         oldTri = Triangulation3(initTri)
         hb = HeegaardBuilder( oldTri, w )
         hb.resolveAll()
-        hb.attachOtherHandlebody()
+        hb.fillHandlebody()
         newTri = hb.triangulation()
 
         #TODO
@@ -1398,15 +1468,21 @@ if __name__ == "__main__":
         count = 0
         minSize = None
         minSig = None
+        maxSize = 0
+        maxSig = None
         for r in hbChoice.resolveInAllWays():
             count += 1
-            r.attachOtherHandlebody()
+            r.fillHandlebody()
             resTri = r.triangulation()
             if minSize is None or resTri.size() < minSize:
                 minSize = resTri.size()
                 minSig = resTri.isoSig()
+            if resTri.size() > maxSize:
+                maxSize = resTri.size()
+                maxSig = resTri.isoSig()
         print( "Total: {}.".format(count) )
         print( "MinSize: {}. MinSig: {}.".format( minSize, minSig ) )
+        print( "MaxSize: {}. MaxSig: {}.".format( maxSize, maxSig ) )
         #choices = hbChoice.resolveUntilChoice()
         #if choices is not None:
         #    print( "Resolved until following choices: {}.".format(
@@ -1482,7 +1558,7 @@ if __name__ == "__main__":
 #            hb.triangulation().size(), hb._resolvedEdges ) )
 #        print()
 #        print( "Full construction, case {}.".format(c) )
-#        mfd = hb.attachOtherHandlebody()
+#        mfd = hb.fillHandlebody()
 #        print( "Valid: {}. Closed: {}. Orbl: {}.".format(
 #            mfd.isValid(), mfd.isClosed(), mfd.isOrientable() ) )
 #        sim = Triangulation3(mfd)
