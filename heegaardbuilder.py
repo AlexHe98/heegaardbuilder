@@ -1,615 +1,838 @@
 """
-A class for building triangulations from a Heegaard diagram.
+A class for building triangulations from a Heegaard bouquet.
 """
 from regina import *
 
 
+#############################################################################
+#                              Helper routines                              #
+#                              ===============                              #
+#############################################################################
+
+
+def _faceNumberings(e):
+    """
+    Returns the triangle indices and vertex numberings for the boundary
+    triangles incident to the given boundary edge e.
+
+    In detail, this routine returns a pair (f, v) such that:
+    --> f[0] is the index of the boundary triangle given by
+            e.embedding(0).tetrahedron().triangle(3);
+    --> f[1] is the index of the boundary triangle given by
+            e.embedding( e.degree() - 1 ).tetrahedron().triangle(2);
+    --> for i,j in {0,1}, v[i][j] is the vertex number of triangle f[i]
+        corresponding to vertex j of the edge e; and
+    --> for i in {0,1}, v[i][2] is the vertex number of triangle f[i]
+        that is opposite the edge e.
+
+    Pre-condition;
+    --> e is a boundary edge of a 3-manifold triangulation.
+    """
+    emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
+    f = []
+    v = []
+    p = [ Perm4(), Perm4(2,3) ]
+    for i in range(2):
+        face = emb[i].tetrahedron().triangle( emb[i].vertices()[3-i] )
+        f.append( face.index() )
+        perm = ( face.embedding(0).vertices().inverse() *
+                emb[i].vertices() * p[i] )
+        v.append( [ perm[0], perm[1], perm[2] ] )
+    return (f, v)
+
+
+def _checkTri(tri):
+    """
+    Checks that the triangulation tri is valid, orientable, one-vertex
+    and has exactly one boundary component.
+    """
+    if not tri.isValid():
+        raise ValueError( "Triangulation is not valid." )
+    if not tri.isOrientable():
+        raise ValueError( "Triangulation is not orientable." )
+    if tri.countVertices() != 1:
+        raise ValueError( "Triangulation is not one-vertex." )
+    bdryComps = tri.countBoundaryComponents()
+    if bdryComps != 1:
+        raise ValueError( "Triangulation must have exactly one boundary " +
+                "component, not {}.".format(bdryComps) )
+
+
+def _checkBouquet( tri, weights, resolved ):
+    """
+    Checks that weights and resolved are formatted correctly.
+
+    Specifically, weights and resolved must satisfy the following conditions:
+    --> weights must be a list or tuple consisting of n non-negative
+        integers, where n = tri.countEdges();
+    --> for each i, weights[i] must be 0 if tri.edge(i) is internal;
+    --> resolved must be a (possibly empty) set consisting of indices of
+        boundary edges of tri; and
+    --> for each i in resolved, weights[i] must be 0.
+    These restrictions on the format are the same as conditions (2), (3),
+    (5) and (6) in the documentation for the HeegaardBuilder.setBouquet()
+    routine.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and has exactly one boundary
+        component.
+    """
+    # Check that weights and resolved have the correct format.
+    givenNum = len(weights)
+    requiredNum = tri.countEdges()
+    if givenNum != requiredNum:
+        raise ValueError( "Given {} edge weights, but ".format(givenNum) +
+                "the triangulation has {} edges.".format(requiredNum) )
+    for i, wt in enumerate(weights):
+        if wt < 0:
+            raise ValueError( "Edge weights must be non-negative, but " +
+                    "edge {} has weight {}.".format( i, wt ) )
+        elif wt > 0:
+            if not tri.edge(i).isBoundary():
+                raise ValueError( "Edge {} is internal, so ".format(i) +
+                        "its weight must be 0, not {}.".format(wt) )
+    for i in resolved:
+        if ( i < 0 or i >= tri.countEdges() or
+                not tri.edge(i).isBoundary() ):
+            raise ValueError( "Edge {} is internal, so it ".format(i) +
+                    "cannot be assigned as a resolved edge." )
+        if weights[i] > 0:
+            raise ValueError( "Edge {} is resolved, so its ".format(i) +
+                    "weight must be 0, not {}.".format( weights[i] ) )
+
+
+def _computeArcCoords( tri, weights ):
+    """
+    Computes the normal and root arc coordinates defined by the given
+    edge weights, and returns these coordinates together with some
+    auxiliary information.
+
+    The arc coordinates only make sense if the given edge weights satisfy the
+    matching constraints for a Heegaard bouquets. Specifically, the matching
+    constraints require that for each triangular face F in the boundary of
+    tri, either:
+    (a) one edge of F contributes more than half of the total weight of all
+        three edges of F; or
+    (b) the total weight of the three edges of F is even.
+    If condition (a) holds, then F contains one or more root arcs. Otherwise,
+    if condition (a) fails, then F must contain only normal arcs, in which
+    case condition (b) must hold. This routine raises ValueError if the
+    matching constraints fail.
+
+    The auxiliary information consists of a tuple with the following entries:
+    (0) The total number of root arcs.
+    (1) A Boolean that is True if and only if at least one arc coordinate
+        is nonzero.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and has exactly one
+        boundary component.
+    --> weights is formatted correctly, as specified in the documentation for
+        the _checkBouquet() routine.
+    """
+    arcCoords = []
+    totalRootArcs = 0
+    hasNonzero = False
+    for face in tri.triangles():
+        if not face.isBoundary():
+            # No arcs in an internal face.
+            arcCoords.append(None)
+            continue
+
+        wt = [ weights[ face.edge(i).index() ] for i in range(3) ]
+        totalWt = sum(wt)
+        normal = [0,0,0]    # Normal arc coordinates.
+        root = [0,0,0]      # Root arc coordinates.
+
+        # If one edge of this face contributes more than half of the
+        # total weight, then this face contains root arcs.
+        maxWt = 0
+        maxInd = 0
+        for i in range(3):
+            if wt[i] > maxWt:
+                maxWt = wt[i]
+                maxInd = i
+        rootArcs = 2*maxWt - totalWt
+        if rootArcs > 0:
+            root[maxInd] = rootArcs
+            normal[ maxInd - 1 ] = wt[ maxInd - 2 ]
+            normal[ maxInd - 2 ] = wt[ maxInd - 1 ]
+
+            # Update arcCoords, totalRootArcs and hasNonzero.
+            arcCoords.append( normal + root )
+            totalRootArcs += rootArcs
+            hasNonzero = True
+            continue
+
+        # Otherwise, this face must contain only normal arcs, in which
+        # case the total weight must be even.
+        if totalWt % 2 != 0:
+            raise ValueError( "Edge weights fail to satisfy the matching " +
+                    "constraints in triangle {}.".format( face.index() ) )
+        for i in range(3):
+            normal[i] = ( wt[i-1] + wt[i-2] - wt[i] ) // 2
+            if normal[i] > 0:
+                hasNonzero = True
+        arcCoords.append( normal + root )
+
+    # We exited the loop, which means that the matching constraints are
+    # satisfied and we successfully compute arc coordinates.
+    return ( arcCoords, ( totalRootArcs, hasNonzero ) )
+
+
+def _checkTangential( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that all the edges in
+    R meet tangentially at the vertex of tri.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and has exactly one boundary
+        component.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The Heegaard bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    stack = []
+    bc = tri.boundaryComponent(0)
+    built = bc.build()
+    for emb in built.vertex(0).embeddings():
+        triFace = bc.triangle( emb.triangle().index() )
+        edgeInd = triFace.edge( emb.vertices()[2] ).index()
+        if edgeInd in resolved:
+            if edgeInd in stack:
+                topInd = stack.pop()
+                if topInd != edgeInd:
+                    raise ValueError( "Edges {} and ".format(topInd) +
+                            "{} form Heegaard petals ".format(edgeInd) +
+                            "that meet transversely." )
+            else:
+                stack.append(edgeInd)
+
+
+def _checkComplement( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that the boundary
+    surface of tri remains connected after cutting along the edges in R.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and has exactly one boundary
+        component.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The Heegaard bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    bc = tri.boundaryComponent(0)
+
+    # Use union-find to count components.
+    parent = dict()
+    size = dict()
+    components = bc.countTriangles()
+    for f in bc.triangles():
+        ind = f.index()
+        parent[ind] = ind
+        size[ind] = 1
+
+    # For each boundary edge e that does not form a resolved Heegaard
+    # petal, take the union of the two components on either side of e.
+    for e in bc.edges():
+        if e.index() in resolved:
+            continue
+
+        # Find representatives for the components on either side of e.
+        f, _ = _faceNumberings(e)
+        for i in range(2):
+            while parent[ f[i] ] != f[i]:
+                # Use path-halving: replace the current parent of f[i]
+                # with its current grandparent, and then go to this
+                # grandparent.
+                parent[ f[i] ] = parent[ parent[ f[i] ] ]
+                f[i] = parent[ f[i] ]
+
+        # Since we are *not* cutting along the edge e, take the union of
+        # the components on either side.
+        if f[0] == f[1]:
+            continue
+        if size[ f[0] ] < size[ f[1] ]:
+            f[0], f[1] = f[1], f[0]
+        parent[ f[1] ] = f[0]
+        size[ f[0] ] = size[ f[0] ] + size[ f[1] ]
+        components -= 1
+
+        # If we are already down to one component, then we are done.
+        if components == 1:
+            return
+
+    # If we exit the above loop, then we never managed to get the number
+    # of components down to one.
+    raise ValueError( "After cutting along the Heegaard bouquet, the " +
+            "boundary surface should remain connected. However, it " +
+            "actually has {} components.".format(components) )
+
+
+def _checkAdmissible( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that R describes a
+    (topologically) admissibly Heegaard bouquet in the boundary of tri.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and has exactly one boundary
+        component.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The Heegaard bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    _checkTangential( tri, resolved )
+    _checkComplement( tri, resolved )
+
+
+def _recogniseLayer(e):
+    """
+    Checks whether e is the new boundary edge that results from layering a
+    tetrahedron t across an edge ee, and if so returns details of this
+    layering; otherwise, returns None.
+
+    Specifically, if we do have such a layering, then this routine returns a
+    a 2-tuple containing the following items:
+    (0) the tetrahedron t; and
+    (1) an edge-embedding of the edge ee that references a tetrahedron tt
+        such that tt != t.
+    """
+    # The edge e must be a boundary edge of t of degree 1.
+    if not e.isBoundary() or e.degree() != 1:
+        return None
+
+    # The opposite edge must be internal, and the opposite triangles must be
+    # internal and distinct.
+    tet = e.embedding(0).tetrahedron()
+    ver = e.embedding(0).vertices()
+    oppEdge = tet.edge( ver[2], ver[3] )
+    if oppEdge.isBoundary():
+        return None
+    oppTri = [ tet.triangle( ver[i] ) for i in range(2) ]
+    if ( oppTri[0].isBoundary() or oppTri[1].isBoundary() or
+            oppTri[0] == oppTri[1] ):
+        return None
+
+    # Find an edge-embedding of oppEdge that references a tetrahedron other
+    # than tet.
+    for oppEmb in oppEdge.embeddings():
+        if oppEmb.tetrahedron() != tet:
+            break
+    return ( tet, oppEmb )
+
+
+def _addEdgeReference( edge, edgeRefs ):
+    """
+    Update edgeRefs to include the given edge.
+
+    edgeRefs must be a 2-element list consisting of the following items:
+    (0) A list F of edge-embeddings of distinct boundary edges of some
+        3-manifold triangulation T. (The intention is that F is a stack of
+        edges that we wish to flip one by one, which requires that we keep
+        track of these edges as we perform flips.)
+    (1) A dictionary D that maps tetrahedron indices i to the set of
+        locations in the list F that reference tetrahedron i of the
+        triangulation T. We allow D to reference locations that no longer
+        exist in F because the corresponding element was popped from the end
+        of F at some point.
+
+    This routine adds an edge-embedding of the given edge to the list F, and
+    updates the dictionary D accordingly.
+    """
+    flip, refTetInds = edgeRefs
+    emb = edge.embedding(0)
+    tetInd = emb.tetrahedron().index()
+    if tetInd in refTetInds:
+        refTetInds[tetInd].add( len(flip) )
+    else:
+        refTetInds[tetInd] = { len(flip) }
+    flip.append(emb)
+
+
+def _adjustEdgeReferences( edgeRefs, doomed ):
+    """
+    Adjust edgeRefs so that it no longer references the doomed tetrahedron.
+
+    edgeRefs must be a 2-element list consisting of the following items:
+    (0) A list F of edge-embeddings of distinct boundary edges of some
+        3-manifold triangulation T. (The intention is that F is a stack of
+        edges that we wish to flip one by one, which requires that we keep
+        track of these edges as we perform flips.)
+    (1) A dictionary D that maps tetrahedron indices i to the set of
+        locations in the list F that reference tetrahedron i of the
+        triangulation T. We allow D to reference locations that no longer
+        exist in F because the corresponding element was popped from the end
+        of F at some point.
+
+    This routine adjusts the edge-embeddings in the list F so that none of
+    these edge-embeddings references the doomed tetrahedron, and updates the
+    dictionary D accordingly.
+    """
+    flip, refTetInds = edgeRefs
+
+    # Make sure we stop referencing the doomed tetrahedron.
+    if doomed.index() in refTetInds:
+        for loc in refTetInds[ doomed.index() ]:
+            if loc >= len(flip):
+                # This can happen when flip is intended to be a stack, in
+                # which case refTetInds may reference an element that
+                # has been removed from flip.
+                continue
+
+            # Find new edge-embedding that avoids the doomed tetrahedron.
+            oldEmb = flip[loc]
+            oldRefTet = oldEmb.tetrahedron()
+            oldRefNum = oldEmb.edge()
+            refEdge = oldRefTet.edge(oldRefNum)
+            for newEmb in refEdge.embeddings():
+                newRefTet = newEmb.tetrahedron()
+                if newRefTet != doomed:
+                    break
+
+            # Update both flip and refTetInds.
+            flip[loc] = newEmb
+            if newRefTet.index() in refTetInds:
+                refTetInds[ newRefTet.index() ].add(loc)
+            else:
+                refTetInds[ newRefTet.index() ] = {loc}
+
+    # Account for the renumbering of tetrahedra.
+    newRefTetInds = dict()
+    for tetInd in refTetInds:
+        if tetInd > doomed.index():
+            newRefTetInds[ tetInd - 1 ] = refTetInds[tetInd]
+        elif tetInd < doomed.index():
+            newRefTetInds[tetInd] = refTetInds[tetInd]
+    refTetInds.clear()
+    refTetInds.update(newRefTetInds)
+
+
+#############################################################################
+#                     Implementation of HeegaardBuilder                     #
+#                     =================================                     #
+#############################################################################
+
+
 class HeegaardBuilder:
-    #TODO Proofread documentation.
-    #TODO Finish documenting and/or implementing "sensibleness" checks.
     """
     Implements the various subroutines needed to execute an algorithm for
     taking an orientable one-vertex triangulation T with a single boundary
     component, and filling with a handlebody according to a system of curves
-    on the boundary of T.
+    given by a Heegaard bouquet in the boundary of T.
 
-    The system of curves must satisfy the following conditions:
-    (1) It has g components, where g is the genus of the boundary of T.
-    (2) These g components are all disjoint.
-    (3) Cutting the boundary surface of T along this system gives a sphere
-        with 2g punctures.
-    Thus, if the triangulation T is itself a handlebody, then T with this
-    system of curves describes a genus-g Heegaard splitting of an orientable
-    closed 3-manifold M, and filling with a handlebody gives a triangulation
-    T' of M in which the Heegaard surface appears as a subcomplex of the
-    2-skeleton of T'.
+    A Heegaard bouquet is a bouquet of circles embedded in the boundary of T
+    such that the vertex of the bouquet lies on the vertex of T, and each
+    petal p (called a Heegaard petal) is a circle embedded in the boundary of
+    T in one of two ways:
+    (1) The petal p is resolved, meaning that it coincides with an edge of T.
+    (2) The petal p is unresolved, meaning that it is embedded so that:
+        --> away from the vertex, p meets edges of T transversely; and
+        --> p meets the interior of each triangular face F in the boundary of
+            T in finitely many normal arcs, together with up to two root arcs
+            that go from a vertex of F to the interior of the edge opposite
+            this vertex.
 
-    If, in addition, T is actually a *layered* triangulation of a handlebody
-    (as described in Jaco and Rubinstein's unpublished 2006 paper titled
-    "Layered-triangulations of 3-manifolds"), then the method of construction
-    implemented by this class guarantees that the triangulation T' will have
-    cutwidth at most 4g-2. Note that because cutwidth is an upper bound for
-    treewidth, this means that the treewidth of T' will also be at most 4g-2.
+    We call a Heegaard bouquet "(topologically) admissible" if all of its
+    petals meet tangentially at the vertex (in other words, the petals can be
+    made disjoint after isotoping them away from the vertex), and these
+    petals form a system of Heegaard curves on the boundary of T. For a
+    weaker condition that is much simpler to test, call a Heegaard bouquet
+    "combinatorially admissible" if it has exactly 2*(g - r) root arcs, where
+    g is the genus of the boundary surface of T and r is the number of
+    resolved petals.
 
-    We encode the system of curves as a union of:
-    --> a normal curve (typically with many components) in the boundary
-        surface; and
-    --> a collection of boundary edges.
-    Each curve given by a component of the normal curve is *unresolved*, and
-    each curve given by a boundary edge is *resolved*.
+    If T is a triangulation of a genus-g handlebody, then T with an
+    admissible Heegaard bouquet describes a genus-g Heegaard splitting of an
+    orientable closed 3-manifold M, and filling with a handlebody gives a
+    triangulation T' of M in which the Heegaard surface appears as a
+    subcomplex of the 2-skeleton of T'.
+
+    Moreover, if T is actually a *layered* triangulation of a genus-g
+    handlebody (as described in Jaco and Rubinstein's unpublished 2006 paper
+    titled "Layered-triangulations of 3-manifolds"), then the method of
+    construction implemented by this class guarantees that the triangulation
+    T' will have cutwidth at most 4g-2. Since cutwidth is an upper bound for
+    treewidth, this means that T' will have treewidth at most 4g-2.
     """
-    def __init__( self, tri, weights, resolvedEdgeIndices=set(),
-            check=True ):
+    def __init__(self):
         """
-        Initialises a HeegaardBuilder object that provides the subroutines
-        needed to turn tri into a one-vertex triangulation of the closed
-        3-manifold obtained by filling with a handlebody according to the
-        system of curves described by the given weights and
-        resolvedEdgeIndices.
-
-        The given triangulation tri should be valid, orientable, one-vertex,
-        and have exactly one boundary component. Note that the one-vertex
-        requirement implies that tri is connected.
-
-        The given weights should describe a normal curve c in the boundary
-        surface of tri as follows:
-        --> We should have len(weights) == tri.countEdges().
-        --> For each i such that e = tri.edge(i) is a boundary edge,
-            weights[i] should give the edge weight of c at e.
-        --> For each i such that tri.edge(i) is *not* a boundary edge,
-            weights[i] should be 0.
-        The components of this normal curve correspond to unresolved curves.
-        Since the given weights need to describe a normal curve, it is worth
-        noting that there are some matching constraints that need to be
-        satisfied.
-
-        The resolvedEdgeIndices give additional curves in the boundary of
-        tri. Specifically, for each i in resolvedEdgeIndices, the edge
-        tri.edge(i) gives a resolved curve. By default, resolvedEdgeIndices
-        is empty, so there are no resolved curves.
-
-        We enforce some restrictions to ensure that the components of our
-        system of curves are disjoint:
-        --> For each i in resolvedEdgeIndices, weights[i] must be 0.
-        --> Since the edges corresponding to resolved curves all meet at the
-            vertex of tri, we insist that they all meet tangentially (rather
-            than transversely).
-
-        If check is True (the default), then this initialiser checks that the
-        conditions mentioned above are all satisfied; this initialiser will
-        raise ValueError if any of these conditions fail. These checks can be
-        skipped by setting check to False, but this could lead to unexpected
-        Exceptions later on.
-
-        It is also important to note that this initialiser never checks
-        whether the given system of curves cuts the boundary surface B of T
-        into a sphere with 2g punctures, where g is the genus of B. If this
-        condition fails, then some of the subroutines provided by this class
-        may raise ValueErrors.
+        Initialises an empty HeegaardBuilder.
         """
-        # Begin checks, if asked to perform such checks.
-        if check:
-            # Check that tri is valid, orientable, one-vertex, and has
-            # exactly one boundary component.
-            if not tri.isValid():
-                raise ValueError( "Triangulation is not valid." )
-            if not tri.isOrientable():
-                raise ValueError( "Triangulation is not orientable." )
-            if tri.countVertices() != 1:
-                raise ValueError( "Triangulation is not one-vertex." )
-            if tri.countBoundaryComponents() != 1:
-                raise ValueError( "Triangulation doesn't have exactly " +
-                        "one boundary component." )
+        self.reset()
 
-            # Check that the given weights are sensible.
-            if len(weights) != tri.countEdges():
-                raise ValueError( "Wrong number of edge weights!" )
-            hasNonZeroWt = False
-            for i, wt in enumerate(weights):
-                if wt < 0:
-                    raise ValueError( "Weights must be non-negative." )
-                elif wt > 0:
-                    if not tri.edge(i).isBoundary():
-                        raise ValueError( "Only boundary edges can have " +
-                                "positive weight." )
-                    if i in resolvedEdgeIndices:
-                        raise ValueError( "The unresolved curves should " +
-                                "be disjoint from the resolved curves." )
-                    hasNonZeroWt = True
-
-            # Check that all the resolved curves meet tangentially.
-            stack = []
-            bc = tri.boundaryComponent(0)
-            built = bc.build()
-            for emb in built.vertex(0).embeddings():
-                triFace = bc.triangle( emb.triangle().index() )
-                edgeInd = triFace.edge( emb.vertices()[2] ).index()
-                if edgeInd in resolvedEdgeIndices:
-                    if edgeInd in stack:
-                        topInd = stack.pop()
-                        if topInd != edgeInd:
-                            raise ValueError( "Resolved curves " +
-                                    "must meet tangentially, " +
-                                    "not transversely." )
-                    else:
-                        stack.append(edgeInd)
-        # End checks.
-
-        # Initialise.
-        self._tri = Triangulation3(tri)
-        self._resolvedEdges = set(resolvedEdgeIndices)
-        self._processWeights( weights, check )
-        #TODO Document any conditions that are checked in _processWeights().
-
-    def clone(self):
+    def reset(self):
         """
-        Creates and returns a clone of this HeegaardBuilder instance.
-
-        Note that the underlying triangulation of the cloned instance will be
-        a *copy* of the underlying triangulation of this instance.
+        Resets self to an empty HeegaardBuilder.
         """
-        # Assume that this instance is sensible, so don't perform checks.
-        return HeegaardBuilder(
-                Triangulation3( self._tri ),
-                self._weights,
-                set(self._resolvedEdges),
-                False ) # Set check to be False.
+        self._tri = None
+        self._weights = None
+        self._resolved = None
+        self._arcCoords = None
+        self._genus = None
+
+    def isEmpty(self):
+        """
+        Is this HeegaardBuilder currently empty?
+        """
+        return ( self._tri is None )
 
     def triangulation(self):
         """
-        Returns a copy of the underlying triangulation.
+        Returns the triangulation currently stored by this HeegaardBuilder,
+        or None if this HeegaardBuilder is empty.
+
+        Warning:
+        --> You are allowed to modify the returned triangulation using a
+            routine other than one of the routines provided by this
+            HeegaardBuilder, but doing so will invalidate the Heegaard
+            bouquet currently stored by this HeegaardBuilder; as a result,
+            subsequent attempts to work with this Heegaard bouquet will lead
+            to undefined behaviour.
         """
-        return Triangulation3( self._tri )
+        return self._tri
 
-    def _processWeights( self, weights, check=True ):
+    def _setBouquetImpl( self, tri, weights, resolved, arcCoords,
+            arcInfo=None ):
         """
-        Update internal data to reflect a new set of edge weights.
+        Set a Heegaard bouquet in the given triangulation tri with the given
+        edge weights, resolved edge indices, and arc coordinates.
+
+        The optional arcInfo variable, if provided, should be a 2-tuple
+        containing auxiliary information as returned by the
+            HeegaardBuilder._computeArcCoords()
+        routine. In the case where this auxiliary information is provided,
+        this routine will raise ValueError if there are no root arcs, but
+        there is still at least one normal arc (since this would imply that
+        we have a normal curve).
+
+        This routine will also raise ValueError if every Heegaard petal is
+        resolved, and the Heegaard bouquet is not (topologically) admissible.
         """
-        self._weights = tuple(weights)
+        # Check for normal curves if it is easy to do so. In particular, this
+        # check only occurs if every Heegaard petal is resolved.
+        if arcInfo is not None:
+            rootArcs, hasNonzero = arcInfo
+            if rootArcs == 0 and hasNonzero:
+                raise ValueError( "Found a normal curve after resolving " +
+                "all Heegaard petals." )
 
-        # Check that the given weights satisfy the matching constraints.
-        if check and not self._checkMatching():
-            raise ValueError(
-                    "Edge weights fail the matching constraints!" )
+        # If necessary, check that the Heegaard bouquet is admissible.
+        if tri.isValid() and tri.countBoundaryComponents() == 1:
+            genus = ( 2 - tri.boundaryComponent(0).eulerChar() ) // 2
 
-        # Count components using union-find.
-        self._points = set()
-        self._initialisePoints()
-        self._parent = { p: p for p in self._points }
-        self._size = { p: 1 for p in self._points }
-        # As a by-product of this, we will also:
-        # - compute coordinates for this normal curve in terms of its arcs;
-        #   and
-        # - assign an index to each component of this normal curve.
-        self._roots = list( self._points )
-        # This is also a good opportunity to record useful information about
-        # how each component of this normal curve traverses the boundary of
-        # our triangulation.
-        self._adjPoints = { p: list() for p in self._points }
-        self._adjCutVerts = { p: list() for p in self._points }
-        self._adjOppEdgeInds = { p: list() for p in self._points }
-        self._countComponentsImpl()
+            # Check admissibility if every Heegaard petal is resolved.
+            if len(resolved) == genus:
+                _checkAdmissible( tri, resolved )
+        else:
+            genus = None
 
-        # Find where all the switches happen.
-        self._switch = { p: False for p in self._points }
-        self._findSwitches()
+        # Only set Heegaard bouquet if all checks pass.
+        self._tri = tri
+        self._weights = weights
+        self._resolved = resolved
+        self._arcCoords = arcCoords
+        self._genus = genus
 
-        # Cache the following whenever they are first computed:
-        # - Resolvable components.
-        # - Components that are isotopic to off-diagonals.
-        # - Lengths of components.
-        # - Number of switches.
-        self._resolvableEdges = [None] * self.countUnresolved()
-        self._offDiagEdges = [None] * self.countUnresolved()
-        self._lengths = [None] * self.countUnresolved()
-        self._switchCounts = [None] * self.countUnresolved()
-
-    def _checkMatching(self):
+    def setBouquet( self, tri, weights, resolved=set() ):
         """
-        Do the underlying edge weights satisfy the matching constraints?
+        Set a combinatorially admissible Heegaard bouquet in the given
+        triangulation tri by directly specifying edge weights and resolved
+        edge indices.
+
+        The input must be "reasonable" in the following sense:
+        (1) tri must be valid, orientable, one-vertex, and have exactly one
+            boundary component;
+        (2) weights must be a list or tuple consisting of n non-negative
+            integers, where n = tri.countEdges();
+        (3) for each i, weights[i] must be 0 if tri.edge(i) is internal;
+        (4) if we assign the value weights[i] to tri.edge(i) for every i such
+            that tri.edge(i) is boundary, then these values satisfy the
+            matching constraints (described below) for a Heegaard bouquet in
+            the boundary of tri;
+        (5) resolved must be a set (empty by default) consisting of indices
+            of boundary edges tri; and
+        (6) for each i in resolved, weights[i] must be 0.
+        If the input is not reasonable, then this routine raises ValueError,
+        and does not change the currently stored Heegaard bouquet.
+
+        The matching constraints require that for each triangular face F in
+        the boundary of tri, either:
+        (a) one edge of F contributes more than half of the total weight of
+            all three edges of F; or
+        (b) the total weight of the three edges of F is even.
+        If condition (a) holds, then F contains one or more root arcs.
+        Otherwise, if condition (a) fails, then F must contain only normal
+        arcs, in which case condition (b) must hold.
+
+        Assuming the input is reasonable, we obtain either:
+        --> a Heegaard bouquet; or
+        --> a union of a Heegaard bouquet with a (possibly disconnected)
+            normal curve.
+        In general, this routine does not check for the presence of normal
+        curves. The only exception is when the Heegaard bouquet consists
+        entirely of resolved petals, in which case normal curves exist if and
+        only if we have one or more nonzero edge weights; this routine raises
+        ValueError if it detects normal curves in this particular case.
+
+        This routine also raises ValueError if the Heegaard bouquet is not
+        combinatorially admissible. However, for (topological) admissibility,
+        this routine only raises ValueError if this condition fails in the
+        special case where every Heegaard petal is resolved.
+
+        Warning:
+        --> This class stores direct references to tri, weights and resolved.
+            You are allowed to modify these objects using a routine other
+            than one of the routines provided by this HeegaardBuilder, but
+            doing so will invalidate the Heegaard bouquet; as a result,
+            subsequent attempts to work with this Heegaard bouquet will lead
+            to undefined behaviour.
         """
-        for face in self._tri.triangles():
-            if not face.isBoundary():
-                continue
+        # If the input is not "reasonable", then the following routines will
+        # raise ValueError.
+        _checkTri(tri)
+        _checkBouquet( tri, weights, resolved )
+        arcCoords, arcInfo = _computeArcCoords( tri, weights )
 
-            # Check that the edge weights around this boundary triangle
-            # satisfy the matching constraints:
-            # - Sum of weights is even.
-            # - No edge has weight too large to match up with the other two
-            #   edges.
-            weights = [ self._weights[ face.edge(i).index() ]
-                    for i in range(3) ]
-            if sum(weights) % 2 != 0:
-                return False
-            for i in range(3):
-                if weights[i] > weights[ (i-1)%3 ] + weights[ (i+1)%3 ]:
-                    return False
+        # Also raise ValueError if the Heegaard bouquet is not
+        # combinatorially admissible.
+        rootArcs = arcInfo[0]
+        chi = tri.boundaryComponent(0).eulerChar() # Equal to (2 - 2*g)
+        if rootArcs != 2 - chi - 2*len(resolved):
+            # Equivalently, rootArcs is not equal to 2*(g - r), where g is
+            # the genus of the boundary surface of tri, and r is the number
+            # of resolved petals.
+            raise ValueError( "Heegaard bouquet is not combinatorially " +
+                    "admissible." )
 
-        return True
+        # Since we have checked all the necessary conditions, we can now set
+        # the Heegaard bouquet. Note that the following routine will, if
+        # possible, use the optional arcInfo variable to detect the presence
+        # of normal curves.
+        self._setBouquetImpl( tri, weights, resolved, arcCoords, arcInfo )
 
-    def _initialisePoints(self):
+    def setClone( self, other ):
         """
-        Initialise intersection points for the underlying normal curve, so
-        that we can compute components using union-find.
+        Set a Heegaard bouquet by cloning the triangulation and bouquet
+        currently stored by the other HeegaardBuilder.
+
+        If the other HeegaardBuilder is empty, then this is equivalent to
+        resetting this HeegaardBuilder to be empty.
         """
-        # Represent each intersection point using a pair consisting of the
-        # edge index and the order of the point along the edge.
-        for edgeInd in range( self._tri.countEdges() ):
-            if not self._tri.edge(edgeInd).isBoundary():
-                continue
-            for p in range( self._weights[edgeInd] ):
-                self._points.add( ( edgeInd, p ) )
-
-    def _find( self, p ):
-        """
-        Find the current root for the given intersection point p.
-        """
-        while self._parent[p] != p:
-            # Use path-halving: replace the current parent of p with its
-            # current grandparent, and then go to this grandparent.
-            self._parent[p] = self._parent[ self._parent[p] ]
-            p = self._parent[p]
-        return p
-
-    def _union( self, p, q ):
-        """
-        Take the union of the components containing the given intersection
-        points p and q.
-        """
-        p = self._find(p)
-        q = self._find(q)
-        if p == q:
-            return
-
-        # Make sure that the set containing p has size greater than or equal
-        # to the set containing q.
-        if self._size[p] < self._size[q]:
-            p, q = q, p
-
-        # Take the union by making p the new root. Also update the size and
-        # the set of roots.
-        self._parent[q] = p
-        self._size[p] = self._size[p] + self._size[q]
-        self._roots.remove(q)
-
-    def _countComponentsImpl(self):
-        """
-        Union-find implementation for counting the components of the
-        underlying normal curve.
-        """
-        # Piece together the components of our normal curve by looking at one
-        # boundary triangle at a time.
-        for face in self._tri.triangles():
-            if not face.isBoundary():
-                continue
-            verts = face.embedding(0).vertices()
-            tet = face.embedding(0).tetrahedron()
-
-            # For each i in {0,1,2}, compute the following:
-            # - The index of the edge opposite vertex i of this face.
-            # - The weight of this edge.
-            # - The start vertex of this edge.
-            # - The embedding of this edge in tet.
-            edgeInds = []
-            weights = []
-            startVerts = []
-            for i in range(3):
-                # Get the edge opposite vertex i of this face, and remember
-                # both its index and its weight.
-                endpoints = { verts[ii] for ii in range(3) }
-                endpoints.remove( verts[i] )
-                edgeInd = tet.edge( *endpoints ).index()
-                edgeInds.append(edgeInd)
-                weights.append( self._weights[edgeInd] )
-
-                # To get the start vertex, find the correct corresponding
-                # edge embedding.
-                edge = self._tri.edge(edgeInd)
-                embs = [ edge.embedding(0),
-                        edge.embedding( edge.degree() - 1 ) ]
-                for emb in embs:
-                    if emb.tetrahedron() != tet:
-                        continue
-                    if endpoints == { emb.vertices()[j] for j in range(2) }:
-                        startVerts.append( emb.vertices()[0] )
-                        break
-
-            # For each i in {0,1,2}, use the arcs that cut off vertex i of
-            # this face to continue piecing together the components.
-            arcCounts = []
-            for i in range(3):
-                ip = (i + 1) % 3
-                im = (i - 1) % 3
-
-                # Combinatorially, if we take away all the arcs that go into
-                # the edge opposite vertex i, then all the remaining points
-                # must be paired together to give arcs cutting off vertex i.
-                arcCounts.append(
-                        ( weights[ip] + weights[im] - weights[i] ) // 2 )
-                for j in range( arcCounts[i] ):
-                    # Consider the jth closest point to vertex i along the
-                    # edge with index edgeInds[ip], and the jth closest point
-                    # to vertex i along the edge with index edgeInds[im].
-                    # These two points are connected by an arc.
-                    if startVerts[ip] == verts[i]:
-                        pp = ( edgeInds[ip], j )
-                    else:
-                        pp = ( edgeInds[ip], weights[ip] - 1 - j )
-                    if startVerts[im] == verts[i]:
-                        pm = ( edgeInds[im], j )
-                    else:
-                        pm = ( edgeInds[im], weights[im] - 1 - j )
-                    self._union( pp, pm )
-
-                    # Record the fact that the points pp and pm are adjacent,
-                    # including information about which vertex gets cut off
-                    # (so that we can count switches later on).
-                    self._adjPoints[pp].append(pm)
-                    self._adjPoints[pm].append(pp)
-                    self._adjOppEdgeInds[pp].append( edgeInds[i] )
-                    self._adjOppEdgeInds[pm].append( edgeInds[i] )
-                    if startVerts[ip] == verts[i]:
-                        self._adjCutVerts[pp].append(0)
-                    else:
-                        self._adjCutVerts[pp].append(1)
-                    if startVerts[im] == verts[i]:
-                        self._adjCutVerts[pm].append(0)
-                    else:
-                        self._adjCutVerts[pm].append(1)
-
-    def _findSwitches(self):
-        """
-        Find switches in the underlying normal curve.
-        """
-        for e in self._tri.edges():
-            edgeInd = e.index()
-            for i in range( self._weights[edgeInd] ):
-                p = ( edgeInd, i )
-                cutVerts = self._adjCutVerts[p]
-                self._switch[p] = (
-                        self._adjCutVerts[p][0] != self._adjCutVerts[p][1] )
-
-    def countUnresolved(self):
-        """
-        Returns the number of unresolved components of the underlying curve.
-        """
-        return len( self._roots )
+        if other.isEmpty():
+            self.reset()
+        else:
+            # Pass clones of everything to the _setBouquetImpl() routine.
+            arcCoords = []
+            for a in other._arcCoords:
+                if a is None:
+                    arcCoords.append(None)
+                else:
+                    arcCoords.append( list(a) )
+            self._setBouquetImpl(
+                    Triangulation3( other._tri ), list( other._weights ),
+                    set( other._resolved ), arcCoords )
 
     def countResolved(self):
         """
-        Returns the number of resolved components of the underlying curve to
-        which we haven't yet attached a disc.
+        Returns the number of resolved petals in the current Heegaard
+        bouquet, or None if this HeegaardBuilder is empty.
         """
-        return len( self._resolvedEdges )
+        if self.isEmpty():
+            return None
+        else:
+            return len( self._resolved )
 
-    def countComponents(self):
+    def flipWeight( self, e ):
         """
-        Returns the number of components of the underlying curve to which we
-        haven't yet attached a disc.
-        """
-        return self.countUnresolved() + self.countResolved()
-
-    def _traverseCurve( self, startPt, d ):
-        """
-        Traverse the unresolved Heegaard curve containing the given startPt.
-
-        Traversal begins at startPt, and proceeds in the direction towards
-        self._adjPoints[startPt][d].
-
-        At each intersection point P along the curve that we traverse, this
-        routine yields a 4-tuple consisting of:
-        (0) The point that occurs before P in the direction of traversal.
-        (1) The point P.
-        (2) The point Q that occurs after P in the direction of traversal.
-        (3) The index of the edge parallel to the normal arc that connects
-            the points P and Q.
-        """
-        # Either traverse in "direction 0" or "direction 1", depending on
-        # whether d is 0 or 1.
-        prevPt, currentPt, nextPt, nextOppEdgeInd = (
-                self._adjPoints[startPt][1 - d],
-                startPt,
-                self._adjPoints[startPt][d],
-                self._adjOppEdgeInds[startPt][d] )
-        yield prevPt, currentPt, nextPt, nextOppEdgeInd
-        while nextPt != startPt:
-            indNext = 1 - self._adjPoints[nextPt].index(currentPt)
-            prevPt, currentPt, nextPt, nextOppEdgeInd = (
-                    currentPt,
-                    nextPt,
-                    self._adjPoints[nextPt][indNext],
-                    self._adjOppEdgeInds[nextPt][indNext] )
-            yield prevPt, currentPt, nextPt, nextOppEdgeInd
-
-    def _traverseComponent( self, index ):
-        """
-        Traverses the requested unresolved component.
-
-        At each intersection point P that we encounter during this traveral,
-        this routine yields a 4-tuple consisting of:
-        (0) The point that occurs before P in the direction of traversal.
-        (1) The point P.
-        (2) The point Q that occurs after P in the direction of traversal.
-        (3) The index of the edge parallel to the normal arc that connects
-            the points P and Q.
-        """
-        for t in self._traverseCurve( self._roots[index], 0 ):
-            yield t
-
-    def _countSwitchesInComponent( self, index ):
-        """
-        Returns the number of switches in the requested unresolved component
-        of the underlying curve.
-
-        The first call to this routine caches the result, so subsequent calls
-        with the same index will not need to recompute the answer.
-        """
-        if self._switchCounts[index] is None:
-            self._switchCounts[index] = 0
-            for _, p, _, _ in self._traverseComponent(index):
-                if self._switch[p]:
-                    self._switchCounts[index] += 1
-        return self._switchCounts[index]
-
-    def _flipWeightChange( self, e ):
-        """
-        Compute how the weight changes after flipping the given edge e.
-        """
-        # Start by counting "corner arcs" that meet e; we will lose the
-        # corresponding intersection points after flipping e.
-        weightChange = 0
-        ind = e.index()
-        wt = self._weights[ind]
-        for i in range(wt):
-            if not self._switch[ (ind, i) ]:
-                # No switch means we have a "corner arc".
-                weightChange -= 1
-
-        # Now count "corner arcs" that will meet the new edge.
-        emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
-        for i in range(2):
-            tet = emb[i].tetrahedron()
-            ver = emb[i].vertices()
-            otherArcs = 0
-            for j in range(2):
-                otherInd = tet.edge( ver[j], ver[2+i] ).index()
-                otherArcs += self._weights[otherInd]
-            otherArcs = ( otherArcs - wt ) // 2
-            weightChange += otherArcs
-
-        return weightChange
-
-    def _flipWeight( self, e ):
-        """
-        Compute the weight of the new edge that would result from flipping
+        Computes the weight of the new edge that would result from flipping
         the given edge e.
+
+        Pre-condition;
+        --> e is a boundary edge of self.triangulation().
         """
-        return self._weights[ e.index() ] + self._flipWeightChange(e)
+        f, v = _faceNumberings(e)
 
-    def _recogniseLayer( self, e ):
+        # Weight of the new edge receives contributions of three types:
+        # - normal arcs opposite e;
+        # - root arcs disjoint from the interior of e; and
+        # - pairs of normal arcs forming segments that join opposite edges of
+        #   the square given by the two triangles incident to e.
+        # Contributions of the first two types are relatively straightforward
+        # to deal with.
+        newWt = 0
+        for i in range(2):
+            # Contribution from normal arcs opposite e in triangle f[i].
+            newWt += self._arcCoords[ f[i] ][ v[i][2] ]
+            for ii in range(2):
+                # Contribution from root arcs through vertex v[i][ii] of
+                # triangle f[i].
+                newWt += self._arcCoords[ f[i] ][ 3 + v[i][ii] ]
+
+        # Contributions of the third type.
+        maxArcs = 0
+        maxi = 0
+        maxii = 0
+        for i in range(2):
+            for ii in range(2):
+                arcs = self._arcCoords[ f[i] ][ v[i][ii] ]
+                if arcs > maxArcs:
+                    maxArcs = arcs
+                    maxi = i
+                    maxii = ii
+        other = 1 - maxi
+        otherNormal = self._arcCoords[ f[other] ][ v[other][maxii] ]
+        otherRoot = self._arcCoords[ f[other] ][ 3 + v[other][2] ]
+        contribution = maxArcs - otherNormal - otherRoot
+        if contribution > 0:
+            newWt += contribution
+        return newWt
+
+    def flipWeightChange( self, e ):
         """
-        Checks whether e is the new boundary edge that results from layering
-        a tetrahedron t across an edge ee, and if so returns details of this
-        layering; otherwise, returns None.
+        Returns the change in total weight that would result from flipping
+        the edge e.
 
-        Specifically, if we do have such a layering, then this routine
-        returns a triple consisting of:
-        (0) the tetrahedron t,
-        (1) another tetrahedron tt (distinct from t), and
-        (3) an edge number n,
-        such that tt.edge(n) == ee.
+        Pre-condition;
+        --> e is a boundary edge of self.triangulation().
         """
-        # The edge e must be a boundary edge of degree 1.
-        if not e.isBoundary() or e.degree() != 1:
-            return None
+        return ( self.flipWeight(e) - self._weights[ e.index() ] )
 
-        # The opposite edge must be internal, and the opposite triangles must
-        # be internal and distinct.
-        tet = e.embedding(0).tetrahedron()
-        ver = e.embedding(0).vertices()
-        oppEdge = tet.edge( ver[2], ver[3] )
-        if oppEdge.isBoundary():
-            return None
-        oppTri = [ tet.triangle( ver[i] ) for i in range(2) ]
-        if ( oppTri[0].isBoundary() or oppTri[1].isBoundary() or
-                oppTri[0] == oppTri[1] ):
-            return None
+    def isReducible( self, e ):
+        """
+        Is the given edge e reducible?
 
-        # Find a (tetrahedron, edge number) pair corresponding to oppEdge.
-        for emb in oppEdge.embeddings():
-            if emb.tetrahedron() == tet:
-                continue
-            oppTet, oppEdgeNum = emb.tetrahedron(), emb.edge()
-            break
-        return ( tet, oppTet, oppEdgeNum )
+        Pre-condition:
+        --> e is a boundary edge of self.triangulation().
+        """
+        return ( self.flipWeight(e) < self._weights[ e.index() ] )
 
-    def _flipEdgeImpl( self, e, aux=None ):
+    def isResolvable( self, e ):
+        """
+        Is the given edge e "resolvable" in the sense that flipping e would
+        create a new edge that forms a resolved petal?
+
+        This routine could detect two Heegaard petals that are isotopic; if
+        it does detect such petals, then it raises ValueError.
+
+        Pre-condition:
+        --> e is a boundary edge of self.triangulation().
+        """
+        f, v = _faceNumberings(e)
+
+        # Triangles f[0] and f[1] must both contain root arcs that meet e.
+        root = []
+        for i in range(2):
+            root.append( self._arcCoords[ f[i] ][ 3 + v[i][2] ] )
+            if root[i] == 0:
+                return False
+
+        # Check whether we have a pair of root arcs that "match up" to give a
+        # petal that would become resolved after flipping the edge e.
+        normal = []
+        for i in range(2):
+            n = []
+            for ii in range(2):
+                n.append( self._arcCoords[ f[i] ][ v[i][ii] ] )
+            normal.append(n)
+        maxArcs = 0
+        maxi = 0
+        maxii = 0
+        for i in range(2):
+            for ii in range(2):
+                if normal[i][ii] > maxArcs:
+                    maxArcs = normal[i][ii]
+                    maxi = i
+                    maxii = ii
+        other = 1 - maxi
+        leftoverRoots = ( normal[other][maxii] + root[other]
+                - normal[maxi][maxii] )
+        if leftoverRoots < 1:
+            return False
+
+        # We can only have exactly one petal p that would become resolved
+        # after flipping the edge e; this is because any other such petal
+        # would be isotopic to p, which would violate admissibility.
+        newResolvedPetals = min( leftoverRoots, root[maxi] )
+        if newResolvedPetals == 1:
+            return True
+        else:
+            raise ValueError( "Edge {} meets ".format( e.index() ) +
+                    "{} Heegaard petals ".format(newResolvedPetals) +
+                    "that are isotopic to each other." )
+
+    def _flipEdgeImpl( self, e, edgeRefs=None ):
         """
         Flips the given boundary edge e and returns the new boundary edge
         that results from this flip.
 
-        This routine automatically updates edge weights and resolved edge
-        indices. In the special case where e is itself one of the resolved
-        edges, this routine simply removes e from the set of resolved edges
-        (the intention is that the only time we should ever flip a resolved
-        edge is when we want to attach a disc by folding along this edge).
+        If e is not a resolved Heegaard petal, then this routine
+        automatically updates the stored Heegaard bouquet so that it remains
+        topologically equivalent to the Heegaard bouquet that we had before
+        the flip. However, if e *is* a resolved petal, then this routine
+        removes e from the set of resolved petals; the intention is that the
+        only time we should ever flip a resolved edge is when we want to
+        attach a disc by folding along this edge.
 
-        If aux is None (the default), then this routine has no additional
-        functionality.
+        If flipping the edge e causes every Heegaard petal to become
+        resolved, then this routine conclusively checks that the following
+        conditions are satisfied:
+        (a) There are no normal curves.
+        (b) The Heegaard bouquet is (topologically) admissible.
+        This routine raises ValueError if either of these conditions fails.
 
-        However, if aux is not None, then it must be a 2-element list
+        If edgeRefs is None (the default), then this routine has no
+        additional functionality.
+
+        However, if edgeRefs is not None, then it must be a 2-element list
         consisting of the following items:
-        (0) A list F of 2-tuples, each of which consists of a tetrahedron t
-            and an integer n such that t.edge(n) is a boundary edge of the
-            underlying triangulation.
+        (0) A list F of edge-embeddings of distinct boundary edges of
+            self.triangulation(). (The intention is that F is a stack of
+            edges that we wish to flip one by one, which requires that we
+            keep track of these edges as we perform flips.)
         (1) A dictionary D that maps tetrahedron indices i to the set of
-            locations in the list F that reference tetrahedron i of the
-            underlying triangulation.
+            locations in the list F that reference tetrahedron i of
+            self.triangulation(). We allow D to reference locations that no
+            longer exist in F because the corresponding element of F was
+            popped from the end of F at some point.
         In this case, this routine provides the additional functionality of
         adjusting these two items subject to the following conditions:
-        --> Each pair (t, n) in F represents the same edge as before, but we
-            may have changed the tetrahedron t to ensure that it is still a
-            tetrahedron that exists in the underlying triangulation (this is
-            necessary because flipping the edge e sometimes involves removing
-            a tetrahedron).
+        --> Each edge-embedding in F represents the same edge as before, but
+            we may have changed the actual edge-embedding to ensure that we
+            are still referencing a tetrahedron that actually exists in
+            self.triangulation() (this is necessary because flipping the edge
+            e sometimes involves removing a tetrahedron).
         --> The dictionary D is adjusted so that the correspondence between
-            tetrahedron indices and elements of F, as described above, still
-            holds.
+            tetrahedron indices and locations in F still holds.
 
         Pre-condition:
-        --> e is a boundary edge of the underlying triangulation.
-        --> If aux is not None, then it must be a 2-element list whose
+        --> e is a boundary edge of self.triangulation().
+        --> If edgeRefs is not None, then it must be a 2-element list whose
             elements satisfy the description given above.
         """
-        removeInfo = self._recogniseLayer(e)
+        removeInfo = _recogniseLayer(e)
         if removeInfo is None:
             doomed = None
         else:
-            doomed, newTet, newEdgeNum = removeInfo
+            doomed, newEmb = removeInfo
+            newTet = newEmb.tetrahedron()
+            newEdgeNum = newEmb.edge()
 
         # If we are going to perform this flip by removing a "doomed"
-        # tetrahedron, and if we are given some aux data that needs to be
+        # tetrahedron, and if we are given some edgeRefs that need to be
         # adjusted to account for this, then perform these adjustments now.
-        if ( doomed is not None ) and ( aux is not None ):
-            flip, refTetInds = aux
-
-            # Make sure we stop referencing the doomed tetrahedron.
-            if doomed.index() in refTetInds:
-                for loc in refTetInds[ doomed.index() ]:
-                    if loc >= len(flip):
-                        continue
-
-                    # Find a new (tetrahedron, edge number) pair that avoids
-                    # the doomed tetrahedron.
-                    oldRefTet, oldRefNum = flip[loc]
-                    refEdge = oldRefTet.edge(oldRefNum)
-                    for emb in refEdge.embeddings():
-                        newRefTet = emb.tetrahedron()
-                        if newRefTet != doomed:
-                            newRefNum = emb.edge()
-                            break
-
-                    # Update both flip and refTetInds.
-                    flip[loc] = ( newRefTet, newRefNum )
-                    if newRefTet.index() in refTetInds:
-                        refTetInds[ newRefTet.index() ].add(loc)
-                    else:
-                        refTetInds[ newRefTet.index() ] = {loc}
-
-            # Account for the renumbering of tetrahedra.
-            newRefTetInds = dict()
-            for tetInd in refTetInds:
-                if tetInd > doomed.index():
-                    newRefTetInds[ tetInd - 1 ] = refTetInds[tetInd]
-                elif tetInd < doomed.index():
-                    newRefTetInds[tetInd] = refTetInds[tetInd]
-            refTetInds.clear()
-            refTetInds.update(newRefTetInds)
+        if ( doomed is not None ) and ( edgeRefs is not None ):
+            _adjustEdgeReferences( edgeRefs, doomed )
 
         # Before we perform the flip, we need to record the information
         # needed to update the edge weights and the resolved edge indices.
-        temp = []
-        for edge in self._tri.edges():
+        updateInfo = []
+        for edge in self._tri.boundaryComponent(0).edges():
             if edge == e:
                 # Since e will no longer be a boundary edge after flipping,
                 # we don't want to remember anything about e.
@@ -622,15 +845,13 @@ class HeegaardBuilder:
                 if tet != doomed:
                     edgeNum = emb.edge()
                     break
-            temp.append( (
+            updateInfo.append( (
                 tet,
                 edgeNum,
                 self._weights[ edge.index() ],
                 edge.index() ) )
-        if self.countUnresolved() == 0:
-            flipWeight = 0
-        else:
-            flipWeight = self._flipWeight(e)
+        flipWeight = self.flipWeight(e)
+        isResolvable = self.isResolvable(e)
 
         # We are now ready to perform the flip. Do this by either removing a
         # doomed tetrahedron, or layering on a new tetrahedron.
@@ -639,671 +860,351 @@ class HeegaardBuilder:
             newEdgeNum = 5
         else:
             self._tri.removeTetrahedron(doomed)
+        newEdge = newTet.edge(newEdgeNum)
 
-        # Before finishing up, we need to update the underlying curves.
-        temp.append( ( newTet, newEdgeNum, flipWeight, None ) )
+        # Compute new edge weights and new resolved edge indices.
         newWeights = [0] * self._tri.countEdges()
+        updateInfo.append( ( newTet, newEdgeNum, flipWeight, None ) )
         newResEdges = set()
-        for tet, edgeNum, wt, oldInd in temp:
+        if isResolvable:
+            newResEdges.add( newEdge.index() )
+        for tet, edgeNum, wt, oldInd in updateInfo:
             newInd = tet.edge(edgeNum).index()
             newWeights[newInd] = wt
-            if oldInd in self._resolvedEdges:
+            if oldInd in self._resolved:
                 newResEdges.add(newInd)
-        self._resolvedEdges = newResEdges
-        self._processWeights(newWeights)
-        return newTet.edge(newEdgeNum)
+
+        # Update the Heegaard bouquet. Note that self._setBouquetImpl() will
+        # check normal curves and admissibility if necessary.
+        arcCoords, arcInfo = _computeArcCoords( self._tri, newWeights )
+        self._setBouquetImpl(
+                self._tri, newWeights, newResEdges, arcCoords, arcInfo )
+        return newEdge
 
     def flipEdge( self, e ):
         """
-        If the given edge e is a boundary edge that does not form one of the
-        resolved components of the underlying curve, then flips e and returns
-        the new boundary edge that results from this flip; otherwise, simply
-        returns None.
+        If the given edge e is a boundary edge that does not form a resolved
+        petal, then flips e and returns the new boundary edge that results
+        from this flip; otherwise, simply returns None.
 
-        If we have at least unresolved curve, then this routine also
-        automatically updates the edge weights accordingly.
+        This routine automatically updates the stored Heegaard bouquet so
+        that after the flip, it remains topologically equivalent to the
+        currently stored Heegaard bouquet.
 
         If e happens to be the new boundary edge that results from layering a
         tetrahedron t, then we flip e by simply removing t. Otherwise, we
         flip e by layering a new tetrahedron across e.
+
+        If flipping the edge e causes every Heegaard petal to become
+        resolved, then this routine conclusively checks that the following
+        conditions are satisfied:
+        (a) There are no normal curves.
+        (b) The Heegaard bouquet is (topologically) admissible.
+        This routine raises ValueError if either of these conditions fails.
+
+        Pre-condition:
+        --> e is an edge of self.triangulation().
         """
-        if ( not e.isBoundary() ) or ( e.index() in self._resolvedEdges ):
+        if ( not e.isBoundary() ) or ( e.index() in self._resolved ):
             return None
         else:
             return self._flipEdgeImpl(e)
 
-    def _componentLength( self, index ):
+    def reducibleEdges(self):
         """
-        Returns the length of the requested unresolved component of the
-        underlying curve.
+        Yields all reducible edges.
 
-        The first call to this routine caches the result, so subsequent calls
-        with the same index will not need to recompute the answer.
+        This routine raises ValueError if this HeegaardBuilder is currently
+        empty.
         """
-        if self._lengths[index] is None:
-            self._lengths[index] = 0
-            for _ in self._traverseComponent(index):
-                self._lengths[index] += 1
-        return self._lengths[index]
-
-    def recogniseResolvable( self, index ):
-        """
-        Recognise the edge indices to which we can resolve the requested
-        unresolved component of the underlying curve.
-
-        The returned object will be a tuple of edge indices; the length of
-        this tuple will always be no greater than two.
-
-        The first call to this routine caches the result, so subsequent calls
-        with the same index will not need to recompute the answer.
-        """
-        if self._resolvableEdges[index] is None:
-            switches = 0
-            resEdgeInds = []
-            for info in self._traverseComponent(index):
-                _, currentPt, nextPt, nextOppEdgeInd = info
-                if self._switch[currentPt]:
-                    switches += 1
-                    if self._switch[nextPt]:
-                        resEdgeInds.append(nextOppEdgeInd)
-            if switches == 2:
-                self._resolvableEdges[index] = tuple(resEdgeInds)
-            else:
-                self._resolvableEdges[index] = tuple()
-        return self._resolvableEdges[index]
-
-    def _recogniseOffDiagonal( self, index ):
-        """
-        Recognise the edge indices across which the requested unresolved
-        component forms an off-diagonal.
-
-        The first call to this routine caches the result, so subsequent calls
-        with the same index will not need to recompute the answer.
-        """
-        if self._offDiagEdges[index] is None:
-            switches = 0
-            crossDiagInds = []
-            for info in self._traverseComponent(index):
-                prevPt, currentPt, nextPt, nextOppEdgeInd = info
-                if self._switch[prevPt]:
-                    switches += 1
-                    if not self._switch[currentPt] and self._switch[nextPt]:
-                        # We are in the middle of a bubble of length 2.
-                        crossDiagInds.append( currentPt[0] )
-            if switches == 2 and crossDiagInds:
-                self._offDiagEdges[index] = tuple(crossDiagInds)
-            else:
-                self._offDiagEdges[index] = tuple()
-        return self._offDiagEdges[index]
-
-    def _bubblePoints( self, e, i ):
-        """
-        Find all intersection points that form a bubble around vertex i of
-        edge e.
-        """
-        if self._weights[ e.index() ] == 0:
-            return set()
-        bubble = set()
-        if i == 0:
-            startPt = ( e.index(), 0 )
-        else:
-            startPt = ( e.index(), self._weights[ e.index() ] - 1 )
-        bubble.add(startPt)
-
-        # Traverse in both directions until we turn away from vertex i.
-        for d in range(2):
-            if self._adjCutVerts[startPt][d] == 1 - i:
-                # Curve immediately turns away from vertex i.
-                continue
-
-            # Curve initially turns towards vertex i, and it will continue
-            # doing so until we reach a switch.
-            for _, _, p, _ in self._traverseCurve( startPt, d ):
-                bubble.add(p)
-                if self._switch[p]:
-                    break
-
-        # If bubble only contains startPt, then the curve turns away from
-        # vertex i in both directions.
-        if len(bubble) == 1:
-            return set()
-        else:
-            return bubble
-
-    def _isotopeOffEdge( self, e, i ):
-        """
-        Try to isotope the arc that goes around vertex i of edge e, and
-        return True if and only if this was possible.
-        """
-        # Start by ruling out special cases:
-        # - We have no bubble around vertex i because the curve turns away
-        #   from vertex i in both directions.
-        # - The bubble meets every intersection point of a component, which
-        #   means that we have either: (1) instead of isotoping, we should
-        #   resolve the curve; or (2) the curve is a vertex link.
-        #TODO Is the second dot point correct?
-        bubble = self._bubblePoints( e, i )
-        lb = len(bubble)
-        if lb == 0:
-            return False
-        edgeInd = e.index()
-        if i == 0:
-            pt = ( edgeInd, 0 )
-        else:
-            pt = ( edgeInd, self._weights[edgeInd] - 1 )
-        if lb == self._componentLength(
-                self._roots.index( self._find(pt) ) ):
-            return False
-
-        # Work out how weights would change after isotopy.
-        newWeights = list( self._weights )
-        for edge in self._tri.edges():
-            if not edge.isBoundary():
-                continue
-            edgeInd = edge.index()
-
-            # How do the weights change on this edge?
-            oldWeight = self._weights[edgeInd]
-            if oldWeight == 1:
-                if ( edgeInd, 0 ) not in bubble:
-                    newWeights[edgeInd] += 2
-            else:
-                if ( edgeInd, 0 ) in bubble:
-                    newWeights[edgeInd] -= 1
-                else:
-                    newWeights[edgeInd] += 1
-                if ( edgeInd, oldWeight - 1 ) in bubble:
-                    newWeights[edgeInd] -= 1
-                else:
-                    newWeights[edgeInd] += 1
-        self._processWeights(newWeights)
-        return True
-
-    def _clearEdge( self, e ):
-        """
-        Assuming that a component of the underlying normal curve resolves to
-        the edge e, isotope everything off e to make resolving possible.
-        """
-        tet = e.embedding(0).tetrahedron()
-        verts = e.embedding(0).vertices()
-        while self._weights[ e.index() ] > 0:
-            #TODO This check shouldn't be necessary, but leave this here
-            #   until I have implemented checks in more appropriate places.
-            if not self._isotopeOffEdge( e, 0 ):
-                #TODO Sometimes we can't isotope because we actually have to
-                #   resolve another curve first.
-                #TODO What about off-diagonals?
-                #TODO Since this routine is intended to be private anyway,
-                #   can I deal with obstructions to isotoping by simply
-                #   assuming in the pre-conditions that there are no such
-                #   obstructions?
-                # Print enough info so I can look at this by hand.
-                for be in self._tri.edges():
-                    if not be.isBoundary():
-                        continue
-                    print( "Ind: {}. Emb0: {}. Emb1: {}. Wt: {}.".format(
-                        be.index(),
-                        be.embedding(0),
-                        be.embedding( be.degree() - 1 ),
-                        self._weights[ be.index() ] ) )
-                raise RuntimeError( "Isotoping unexpectedly failed." )
-            e = tet.edge( verts[0], verts[1] )
-
-    def resolveComponent( self, index, edgeInd=None ):
-        """
-        Checks whether it is possible to resolve the requested unresolved
-        component, and if so resolves this component.
-
-        This routine takes an additional edgeInd argument, which is handled
-        as follows:
-        --> If edgeInd is None (the default), then this routine returns True
-            if and only if the requested component can be resolved to any
-            particular boundary edge of the underlying triangulation. In the
-            case where such a resolution is possible, this routine makes an
-            arbitrary choice for which one to perform (we may have up to two
-            choices).
-        --> If edgeInd is not None, then it must be the index an edge of the
-            underlying triangulation, and this routine returns True if and
-            only if the requested component can be resolved to the specific
-            edge corresponding to this given edge index. In the case where
-            such a resolution is possible, this routine guarantees to resolve
-            to the edge specified by edgeInd (even when another choice of
-            edge is available).
-
-        Pre-condition:
-        --> If edgeInd is not None, then it must be an integer corresponding
-            to the index of an edge of the underlying triangulation.
-        """
-        # Is the requested resolution possible?
-        resEdgeInds = self.recogniseResolvable(index)
-        if edgeInd is None:
-            if not resEdgeInds:
-                return False
-            else:
-                edgeInd = resEdgeInds[0]
-        else:
-            if edgeInd not in resEdgeInds:
-                return False
-
-        # We can definitely resolve. Before we perform the resolution,
-        # compute the subsequent reductions to the edge weights.
-        weightChanges = [0] * self._tri.countEdges()
-        for _, p, _, _ in self._traverseComponent(index):
-            weightChanges[ p[0] ] -= 1
-
-        # Clear the edge, and then resolve the requested component by simply:
-        # - deleting its contributions to edge weight, and
-        # - adding edgeInd to the set of resolved edge indices.
-        self._clearEdge( self._tri.edge(edgeInd) )
-        self._resolvedEdges.add(edgeInd)
-        newWeights = [ self._weights[i] + weightChanges[i] for
-                i in range( self._tri.countEdges() ) ]
-        self._processWeights(newWeights)
-        return True
-
-    #TODO Rename?
-    def _isHeegaard(self):
-        """
-        Does the underlying curve give a valid Heegaard diagram?
-        """
-        #TODO Check handlebody, number of curves, and separating?
-        pass
-
-    #TODO Make public?
-    def _allCompImmedRes(self):
-        """
-        Are all components of the underlying curve "immediately resolvable"
-        in the sense that they are either resolved, resolvable or isotopic to
-        an off-diagonal?
-        """
-        for i in range( self.countUnresolved() ):
-            if ( not self.recogniseResolvable(i) and
-                    not self._recogniseOffDiagonal(i) ):
-                return False
-        return True
-
-    def _simulResolve(self):
-        """
-        Checks whether all components of the underlying curve are
-        "immediately resolvable", and if so resolves all components.
-
-        A component of the underlying curve is "immediately resolvable" if it
-        is either resolved, resolvable, or isotopic to an off-diagonal. In
-        addition to performing the resolutions, this routine also returns
-        True if and only if all components were initially "immediately
-        resolvable" (in which case these components will all have become
-        resolved by the time this routine terminates).
-        """
-        # Find all the edges to which we will resolve.
-        #NOTE There is no need to avoid re-running the recogniseResolvable()
-        #   and _recogniseOffDiagonal() routines because the results get
-        #   cached anyway.
-        resEdges = []
-        flipEdges = []
-        refTetInds = dict()
-        for i in range( self.countUnresolved() ):
-            #TODO We are making arbitrary choices here. Should I allow
-            #   experimentation with these choices?
-            if self.recogniseResolvable(i):
-                emb = self._tri.edge(
-                        self.recogniseResolvable(i)[0] ).embedding(0)
-                resEdges.append( ( emb.tetrahedron(), emb.edge() ) )
-            elif self._recogniseOffDiagonal(i):
-                emb = self._tri.edge(
-                        self._recogniseOffDiagonal(i)[0] ).embedding(0)
-                tet = emb.tetrahedron()
-
-                # Update both flipEdges and refTetInds.
-                flipEdges.append( ( tet, emb.edge() ) )
-                if tet.index() in refTetInds:
-                    refTetInds[ tet.index() ].add( tet.index() )
-                else:
-                    refTetInds[ tet.index() ] = { tet.index() }
-            else:
-                # Component i is not "immediately resolvable".
-                return False
-
-        # Since we will ultimately be resolving *all* of our components, we
-        # might as well set all the weights to zero now.
-        self._processWeights( [0] * self._tri.countEdges() )
-
-        # Add all the new resolved edge indices that arise from resolvable
-        # components.
-        for tet, edgeNum in resEdges:
-            self._resolvedEdges.add( tet.edge(edgeNum).index() )
-
-        # Now deal with the off-diagonals by performing the requisite flips,
-        # and then adding the new edges as resolved edges.
-        while flipEdges:
-            tet, edgeNum = flipEdges.pop()
-            newEdge = self._flipEdgeImpl(
-                    tet.edge(edgeNum), [ flipEdges, refTetInds ] )
-            self._resolvedEdges.add( newEdge.index() )
-
-        # All done!
-        return True
-
-    def _isMaximalWeight( self, e ):
-        """
-        Is the edge e maximal-weight?
-
-        If e is not even a boundary edge, then this routine always returns
-        False. Otherwise, this routine returns True if and only if the weight
-        of e is maximal among boundary edges.
-        """
-        return ( self._weights[ e.index() ] == max( self._weights ) )
-
-    def _isReducible( self, e ):
-        """
-        Is the edge e reducible?
-        """
-        return ( self._flipWeightChange(e) < 0 )
-
-    def _maxReducibleEdges(self):
-        """
-        Yields all maximal-weight reducible edges.
-        """
-        for e in self._tri.edges():
-            if ( e.isBoundary() and self._isMaximalWeight(e) and
-                    self._isReducible(e) ):
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        for e in self._tri.boundaryComponent(0).edges():
+            if self.isReducible(e):
                 yield e
 
-    def _resolutions(self):
+    def resolveAllPetals(self):
         """
-        Yields all possible ways we can resolve a component of the underlying
-        normal curve to a boundary edge of the underlying triangulation.
+        Flips edges until all of the Heegaard petals are resolved.
 
-        In more detail, this routine yields all possible pairs (i, e), where:
-        --> i is the index of a resolvable component c; and
-        --> e is the index of an edge to which we can resolve c.
-        """
-        for i in range( self.countUnresolved() ):
-            for e in self.recogniseResolvable(i):
-                yield (i, e)
+        This routine chooses reducible edges arbitrarily.
 
-    def _maxReduceSwitchEdges(self):
+        This routine raises ValueError if:
+        --> this HeegaardBuilder is currently empty; or
+        --> while flipping edges, we reach a situation where there are no
+            reducible edges.
         """
-        Yields all maximal-weight edges such that flipping the edge reduces
-        the total number of switches.
-        """
-        for e in self._tri.edges():
-            if not e.isBoundary() or not self._isMaximalWeight(e):
-                continue
-
-            # Check whether flipping this maximal-weight edge e would reduce
-            # the number of switches.
-            for i in range( self._weights[ e.index() ] ):
-                pt = ( e.index(), i )
-
-                # Look for "alternating" pattern.
-                if ( self._switch[pt] and
-                        self._switch[ self._adjPoints[pt][0] ] and
-                        self._switch[ self._adjPoints[pt][1] ] ):
-                    # The current edge e is one of the edges that we're
-                    # looking for, so we can yield and then move on to the
-                    # next edge.
-                    yield e
-                    break
-
-    def resolveAll(self):
-        """
-        Resolves all components of the underlying normal curve.
-        """
-        while not self._allCompImmedRes():
-            # Try to flip a maximal-weight reducible edge.
-            foundMaxRed = False
-            for e in self._maxReducibleEdges():
-                foundMaxRed = True
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        while self.countResolved() < self._genus:
+            reduced = False
+            for e in self.reducibleEdges():
+                # If flipping the edge e would leave behind only resolved
+                # petals, then flipEdge() will check that:
+                # - there are no normal arcs; and
+                # - the Heegaard bouquet is (topologically) admissible.
                 self.flipEdge(e)
+                reduced = True
                 break
-            if foundMaxRed:
-                continue
+            if not reduced:
+                # Since we can always reduce when we have a Heegaard bouquet
+                # (regardless of whether it is admissible), the only way we
+                # could run out of reducible edges is if we have a normal
+                # curve.
+                raise ValueError( "Could not find a reducible edge, " +
+                        "which means there must be a normal curve." )
 
-            # If there is no maximal-weight reducible edge, then try to
-            # resolve a component.
-            resolved = False
-            for i, e in self._resolutions():
-                self.resolveComponent(i, e)
-                resolved = True
-                break
-            if resolved:
-                continue
-
-            # If we can't resolve either, then we must be able to reduce the
-            # number of switches by flipping a maximal-weight edge.
-            foundSwitch = False
-            for e in self._maxReduceSwitchEdges():
-                foundSwitch = True
-                self.flipEdge(e)
-                break
-            if not foundSwitch:
-                raise RuntimeError( "Algorithm failed unexpectedly." )
-
-        # Once we break out of the above loop, we know that every component
-        # is "immediately resolvable", so we simply perform the resolutions.
-        self._simulResolve()
-
-    def resolveUntilChoice(self):
+    def resolveGreedily(self):
         """
-        Attempts to resolve all components of the underlying normal curve,
+        Greedily flips edges until all of the Heegaard petals are resolved.
+
+        The word "greedily" refers to the method by which this routine
+        chooses the edge to flip: it always chooses an edge that reduces the
+        total edge weight as much as possible.
+
+        This routine raises ValueError if:
+        --> this HeegaardBuilder is currently empty; or
+        --> while flipping edges, we reach a situation where there are no
+            reducible edges.
+        """
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        while self.countResolved() < self._genus:
+            e = None
+            reduction = 0
+            for candidate in self.reducibleEdges():
+                r = self.flipWeightChange(candidate)
+                if r < reduction:
+                    reduction = r
+                    e = candidate
+            if e is None:
+                # Since we can always reduce when we have a Heegaard bouquet
+                # (regardless of whether it is admissible), the only way we
+                # could run out of reducible edges is if we have a normal
+                # curve.
+                raise ValueError( "Could not find a reducible edge, " +
+                        "which means there must be a normal curve." )
+            # If flipping the edge e would leave behind only resolved
+            # petals, then flipEdge() will check that:
+            # - there are no normal arcs; and
+            # - the Heegaard bouquet is (topologically) admissible.
+            self.flipEdge(e)
+
+    def resolveUntilChoice( self, greedy=True ):
+        """
+        Attempts to flip edges until all of the Heegaard petals are resolved,
         but stops when we reach a situation where we have multiple choices
-        while attempting to make all components "immediately resolvable".
+        for which edge to flip.
+        
+        If greedy is True (the default), then this routine only considers
+        reducible edges that reduce the total edge weight as much as
+        possible. You can force this routine to consider *all* reducible
+        edges by setting greedy to False, but be warned that this could
+        significantly increase the number of available choices.
 
-        A component is "immediately resolvable" if it is either resolved,
-        resolvable, or isotopic to an off-diagonal.
+        This routine returns None if it successfully resolves all Heegaard
+        petals without ever having to arbitrarily choose among multiple
+        reducible edges. However, if such a choice is required, then this
+        routine stops flipping edges, and instead returns a list containing
+        all of the reducible edges that could have been flipped.
 
-        This routine returns None if it successfully resolves all components
-        without having to make arbitrary choices while attempting to make all
-        components "immediately resolvable". However, if such a choice is
-        required, then this routine stops attempting to resolve all
-        components, and instead returns a 2-element tuple T detailing the set
-        of choices that it could have made:
-        --> If this routine is attempting to flip a maximal-weight reducible
-            edge and it is faced with more than one choice for such an edge,
-            then the returned tuple T will consist of:
-            (0) The string "Reduce".
-            (1) A list of all maximal-weight reducible edges in the
-                underlying triangulation.
-        --> If this routine is attempting to resolve a single component and
-            it is faced with more than one choice for such a resolution, then
-            the returned tuple T will consist of:
-            (0) The string "Resolve".
-            (1) A list of all pairs (i, e), where i is the index of a
-                resolvable component c and e is the index of an edge to which
-                we can resolve c.
-        --> If this routine is attempting to flip a maximal-weight edge in
-            such a way that the flip reduces the number of switches, and if
-            it is face with more than one choice for such a flip, then the
-            returned tuple T will consist of:
-            (0) The string "Switch".
-            (1) A list of all maximal-weight edges e such that flipping e
-                reduces the number of switches.
+        This routine raises ValueError if:
+        --> this HeegaardBuilder is currently empty; or
+        --> while flipping edges, we reach a situation where there are no
+            reducible edges.
         """
-        while not self._allCompImmedRes():
-            # Do we have one or more maximal-weight reducible edges?
-            maxRed = []
-            for e in self._maxReducibleEdges():
-                maxRed.append(e)
-            if maxRed:
-                # We found at least one maximal-weight reducible edge.
-                if len(maxRed) == 1:
-                    self.flipEdge( maxRed[0] )
-                    continue
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        while self.countResolved() < self._genus:
+            reduction = 0 # Only used if greedy is True.
+            redEdges = []
+            for e in self.reducibleEdges():
+                if greedy:
+                    change = self.flipWeightChange(e)
+                    if change > reduction:
+                        continue
+                    if change < reduction:
+                        reduction = change
+                        redEdges = []
+                redEdges.append(e)
+            if redEdges:
+                # We found at least one reducible edge.
+                if len(redEdges) == 1:
+                    # If flipping the edge e would leave behind only resolved
+                    # petals, then flipEdge() will check that:
+                    # - there are no normal arcs; and
+                    # - the Heegaard bouquet is (topologically) admissible.
+                    self.flipEdge( redEdges[0] )
                 else:
-                    return ( "Reduce", maxRed )
-
-            # If there is no maximal-weight reducible edge, then check
-            # whether we have one or more options for resolving a component.
-            res = []
-            for r in self._resolutions():
-                res.append(r)
-            if res:
-                # We found at least one resolution.
-                if len(res) == 1:
-                    self.resolveComponent( *res[0] )
-                    continue
-                else:
-                    return ( "Resolve", res )
-
-            # If we can't resolve either, then we must be at least one
-            # maximal-weight edge e such that flipping e reduces the number
-            # of switches.
-            switch = []
-            for e in self._maxReduceSwitchEdges():
-                switch.append(e)
-            if switch:
-                # We found at least one edge that we can flip to reduce the
-                # number of switches.
-                if len(switch) == 1:
-                    self.flipEdge(e)
-                    continue
-                else:
-                    return ( "Switch",  switch )
+                    return redEdges
             else:
-                raise RuntimeError( "Algorithm unexpectedly failed." )
+                # Since we can always reduce when we have a Heegaard bouquet
+                # (regardless of whether it is admissible), the only way we
+                # could run out of reducible edges is if we have a normal
+                # curve.
+                raise ValueError( "Could not find a reducible edge, " +
+                        "which means there must be a normal curve." )
 
-        # If we break out of the above loop, then we know that every
-        # component is "immediately resolvable", so we simply perform the
-        # resolutions.
-        #TODO This currently makes arbitrary choices that the user has no
-        #   control over.
-        self._simulResolve()
+        # If we exit the above loop, then we successfully resolved all petals
+        # without needing to make an arbitrary choice.
         return None
 
-    def resolveInAllWays(self):
+    def resolveInAllWays( self, greedy=True ):
         """
         Yields instances of HeegaardBuilder corresponding to all possible
-        ways to resolve the components of the underlying curve.
+        ways to resolve the stored Heegaard bouquet.
+        
+        If greedy is True (the default), then this routine only considers
+        reducible edges that reduce the total edge weight as much as
+        possible. You can force this routine to consider *all* reducible
+        edges by setting greedy to False, but be warned that this could
+        significantly increase the number of available choices.
 
         This routine never modifies this instance of HeegaardBuilder.
+
+        This routine raises ValueError if:
+        --> this HeegaardBuilder is currently empty; or
+        --> while flipping edges, we reach a situation where there are no
+            reducible edges.
+
+        Warning:
+        --> In total, this routine could yield an enormous number of
+            instances of HeegaardBuilder, even if greedy is set to True.
         """
-        hb = self.clone()
-        choices = hb.resolveUntilChoice()
-        if choices is None:
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        hb = HeegaardBuilder()
+        hb.setClone(self)
+        redEdges = hb.resolveUntilChoice(greedy)
+        if redEdges is None:
             yield hb
         else:
-            if choices[0] in { "Reduce", "Switch" }:
-                for edge in choices[1]:
-                    hbClone = hb.clone()
-                    hbClone.flipEdge( hbClone._tri.edge( edge.index() ) )
-                    for r in hbClone.resolveInAllWays():
-                        yield r
-            elif choices[0] == "Resolve":
-                for i, e in choices[1]:
-                    hbClone = hb.clone()
-                    hbClone.resolveComponent( i, e )
-                    for r in hbClone.resolveInAllWays():
-                        yield r
-            else:
-                raise RuntimeError(
-                        "Unknown operation \"{}\".".format( choices[0] ) )
+            for e in redEdges:
+                hbClone = HeegaardBuilder()
+                hbClone.setClone(hb)
+                # If flipping the edge e would leave behind only resolved
+                # petals, then flipEdge() will check that:
+                # - there are no normal arcs; and
+                # - the Heegaard bouquet is (topologically) admissible.
+                hbClone.flipEdge(
+                        hbClone.triangulation().edge( e.index() ) )
+                for r in hbClone.resolveInAllWays(greedy):
+                    yield r
 
     def _fold( self, e ):
-        #TODO This has a bunch of pre-conditions.
         """
-        If possible, folds about the given boundary edge e; returns True if
-        and only if folding is successful.
+        Folds about the given boundary edge e of self.triangulation().
+        
+        Such a fold is only possible if the boundary triangles on either side
+        of e are distinct. This routine raises RuntimeError if the given edge
+        e does not satisfy this requirement.
+
+        This routine assumes that all edge weights are 0; if this condition
+        fails, then this routine will erase all non-zero edge weights. This
+        routine also assumes that none of the four boundary edges opposite e
+        form resolved petals (however, e itself may form a resolved petal).
+
+        Provided that the two boundary vertices opposite the edge e are not
+        pinched together, performing the requested fold will not create any
+        ideal vertices in self.triangulation().
+
+        Pre-condition:
+        --> e is a boundary edge of self.triangulation().
+        --> All edge weights are 0.
+        --> None of the four boundary edges opposite e form resolved petals.
         """
-        #TODO Following can create invalid vertices. This should just be
-        #   handled in the pre-conditions, since the only times I ever call
-        #   this routine is when I know it is safe to do so.
-        emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
-        tet = [ x.tetrahedron() for x in emb ]
-        ver = [ x.vertices() for x in emb ]
+        tet = []
+        ver = []
+        for i in [ 0, e.degree() - 1 ]:
+            emb = e.embedding(i)
+            tet.append( emb.tetrahedron() )
+            ver.append( emb.vertices() )
         if tet[0] == tet[1] and ver[0][3] == ver[1][2]:
-            return False
+            # Cannot fold if the boundary triangles on either side of the
+            # edge e are actually the same triangle.
+            raise RuntimeError( "Attempted to fold a triangle " +
+                    "onto itself." )
         else:
             tet[0].join( ver[0][3], tet[1],
                     ver[1] * Perm4(2,3) * ver[0].inverse() )
-            return True
 
-    #TODO I might want to just delete this. It should be easy to reinstate
-    #   later if I change my mind.
-    def foldAlongCurve( self, e ):
-        """
-        Folds along the resolved curve corresponding to the given edge e.
-
-        Topologically, this has the effect of attaching a thickened disc
-        along this resolved curve.
-
-        Raises ValueError if e does not correspond to a resolved curve.
-
-        Pre-condition:
-        --> e is a boundary edge of the underlying triangulation.
-        """
-        # Make sure that e corresponds to a resolved curve.
-        if e.index() not in self._resolvedEdges:
-            raise ValueError(
-                    "Given edge does not correspond to a resolved curve." )
-
-        # Perform the fold.
-        self._fold( self._flipEdgeImpl(e) )
+            # Update the Heegaard bouquet.
+            wts = [0] * self.triangulation().countEdges()
+            self._resolved.discard( e.index() )
+            arcCoords, arcInfo = _computeArcCoords( self._tri, wts )
+            self._setBouquetImpl(
+                    self._tri, wts, self._resolved, arcCoords, arcInfo )
 
     def _attemptFold(self):
         """
-        Assuming boundary component 0 of the underlying triangulation is a
-        2-sphere boundary, tries to either partially or completely fill this
+        Assuming that boundary component 0 of self.triangulation() is a
+        2-sphere, attempts to either partially or completely fill this
         2-sphere with a 3-ball by folding a pair of boundary faces together.
 
         Returns True if and only if such a fold is successfully performed.
+
+        Pre-condition:
+        --> This HeegaardBuilder is currently non-empty.
+        --> The surface self.triangulation().boundaryComponent(0) is a
+            2-sphere.
         """
         # The idea is to iterate through each boundary edge e, and consider
-        # the square formed by the two boundary triangles incident to e.
-        # We could potentially fold this square across either of its two
-        # diagonals (for one of these folds, we first have to do an edge
-        # flip), so we check whether these folds are "safe".
+        # the square formed by the two boundary triangles incident to e. We
+        # could potentially fold this square across either of its two
+        # diagonals (for one of these folds, we would first need to perform
+        # an edge flip), so we check whether these folds are "safe".
         bc = self._tri.boundaryComponent(0)
         built = bc.build()
         flip = None # Edge that we can fold after flipping, if necessary.
         for e in built.edges():
-            fac = [ emb.triangle() for emb in e.embeddings() ]
-            if fac[0] == fac[1]:
+            face = []
+            ver = []
+            for emb in e.embeddings():
+                face.append( emb.triangle() )
+                ver.append( emb.vertices() )
+            if face[0] == face[1]:
                 continue
-            ver = [ emb.vertices() for emb in e.embeddings() ]
 
             # First check whether it is safe to fold directly over e.
-            if fac[0].vertex( ver[0][2] ) == fac[1].vertex( ver[1][2] ):
+            if face[0].vertex( ver[0][2] ) == face[1].vertex( ver[1][2] ):
                 # The fold is safe, so perform it.
-                #NOTE Regina promises an edge-index correspondence between bc
-                #   and built, but this sometimes fails for some reason.
-                #self._fold( bc.edge( e.index() ) )
-                self._fold(
-                        bc.triangle( fac[0].index() ).edge( ver[0][2] ) )
+                self._fold( bc.triangle( face[0].index() ).edge( ver[0][2] ) )
                 return True
 
             # Now, if necessary, check whether it would be safe to fold after
             # flipping e.
             if ( flip is None ) and ( e.vertex(0) == e.vertex(1) ):
                 # Only perform this fold later on, if it is really necessary.
-                #NOTE Regina promises an edge-index correspondence between bc
-                #   and built, but this sometimes fails for some reason.
-                #flip = bc.edge( e.index() )
-                flip = bc.triangle( fac[0].index() ).edge( ver[0][2] )
+                flip = bc.triangle( face[0].index() ).edge( ver[0][2] )
 
         # We couldn't directly fold, but maybe we can fold after flipping.
         if flip is None:
-            return False
+            return None
         else:
             # It is safe to fold after flipping.
-            newEdge = self.flipEdge(flip)
-            self._fold(newEdge)
+            self._fold( self._flipEdgeImpl(flip) )
             return True
 
     def _fillBall(self):
         """
-        Assuming the underlying triangulation has 2-sphere boundary, fills
-        this 2-sphere with a 3-ball.
+        Assuming that self.triangulation() has 2-sphere boundary, fills this
+        2-sphere with a 3-ball.
+
+        Pre-condition:
+        --> This HeegaardBuilder is currently non-empty.
+        --> The boundary surface of self.triangulation() is a 2-sphere.
         """
         while self._tri.hasBoundaryTriangles():
             if self._attemptFold():
                 continue
 
-            # Since folding was not possible, we know (in particular) that we
-            # have no vertices of degree less than three. Our goal now is to
-            # keep flipping edges until folding is possible; at worst, this
-            # is guaranteed to succeed once we have reduced the degree of a
-            # boundary vertex to two. Start by finding a boundary vertex of
-            # minimum degree.
+            # Since folding was not possible, we know (in particular) that
+            # the boundary surface S has no vertices of degree less than 3.
+            # Our goal now is to keep flipping edges until it *is* possible
+            # to perform a fold; provided we take care to always reduce the
+            # minimum vertex degree in S, this procedure must eventually
+            # terminate. Thus, we start by finding a vertex of minimum degree
+            # in S.
             bc = self._tri.boundaryComponent(0)
             built = bc.build()
             minVert = built.vertex(0)
@@ -1312,85 +1213,78 @@ class HeegaardBuilder:
                 deg = v.degree()
                 if deg < minVert.degree():
                     minVert = v
+
+                    # We know that built contains no vertices of degree less
+                    # than 3, so if we have reduced minVert.degree() down to
+                    # 3, then we have already found the minimum.
                     if deg == 3:
                         break
 
-            # Pre-compute a list of tet-edgeNum pairs that we flip.
+            # Create a stack of edge-embeddings such that flipping the
+            # corresponding edges will reduce the degree of minVert.
             flip = []
             refTetInds = dict()
+            edgeRefs = [ flip, refTetInds ]
             for i in range( minVert.degree() - 2 ):
                 vertEmb = minVert.embedding(i)
-                #NOTE Regina promises an edge-index correspondence between bc
-                #   and built, but this sometimes fails for some reason.
-                #ind = vertEmb.triangle().edge(
-                #        vertEmb.vertices()[2] ).index()
-                #edgeEmb = bc.edge(ind).embedding(0)
-                facInd = vertEmb.triangle().index()
+                faceInd = vertEmb.triangle().index()
                 edgeNum = vertEmb.vertices()[2]
-                edgeEmb = bc.triangle(facInd).edge(edgeNum).embedding(0)
-
-                # Update both flip and refTetInds.
-                refTet = edgeEmb.tetrahedron()
-                flip.append(
-                        ( refTet, edgeEmb.edge() ) )
-                if refTet.index() in refTetInds:
-                    refTetInds[ refTet.index() ].add( len(flip) - 1 )
-                else:
-                    refTetInds[ refTet.index() ] = { len(flip) - 1 }
+                _addEdgeReference(
+                        bc.triangle(faceInd).edge(edgeNum), edgeRefs )
 
             # Keep flipping until we can fold.
             while True:
-                tet, edgeNum = flip.pop()
+                emb = flip.pop()
                 self._flipEdgeImpl(
-                        tet.edge(edgeNum), [ flip, refTetInds ] )
+                        emb.tetrahedron().edge( emb.edge() ), edgeRefs )
                 if self._attemptFold():
                     break
 
     def fillHandlebody(self):
         """
-        If all of our curves are resolved, then fills with a handlebody H in
-        such a way that each curve bounds a disc in H.
+        If every Heegaard petal is resolved, then fills self.triangulation()
+        with a handlebody H such that each Heegaard petal bounds a disc in H.
 
-        Returns True if and only if all our curves resolved; this routine
-        modifies the underlying triangulation when and only when it returns
-        True.
+        If every Heegaard petal is indeed resolved, then this routine also
+        returns True (after it has performed the operation of filling with a
+        handlebody). Otherwise, this routine returns False and leaves
+        self.triangulation() unchanged.
+
+        This routine raises ValueError if this HeegaardBuilder is currently
+        empty.
         """
-        if self.countUnresolved() > 0:
+        if self.isEmpty():
+            raise ValueError( "Empty HeegaardBuilder." )
+        if self.countResolved() != self._genus:
             return False
 
-        # Initially, we just know that we need to attach a disc to every
-        # resolved component by flipping and then folding. However, if this
-        # requires us to flip two edges of a single triangle f, then we first
-        # need to split f into two triangles by flipping the third edge of f.
-        # We use a stack to keep track of all the edges (stored as pairs
-        # consisting of a tetrahedron and an edge number) that we need to
-        # flip, as well as the order in which we need to flip these edges.
-        flipSet = set()
+        # We know that every Heegaard petal is resolved. Our goal is to
+        # attach a disc to each petal by flipping and then folding. However,
+        # if this requires us to flip two edges of a single triangle f, then
+        # we first need to split f into two triangles by flipping the third
+        # edge of f. We use list of edge-embeddings to keep track of all the
+        # edges that we need to flip, and we treat this list as a stack to
+        # keep track of the order in which we need to flip the edges.
         flipStack = []
         refTetInds = dict()
-        for e in self._resolvedEdges:
-            edge = self._tri.edge(e)
-            flipSet.add( edge.index() )
-            emb = edge.embedding(0)
-            refTet = emb.tetrahedron()
-            flipStack.append( ( refTet, emb.edge() ) )
-            if refTet.index() in refTetInds:
-                refTetInds[ refTet.index() ].add( len(flipStack) - 1 )
-            else:
-                refTetInds[ refTet.index() ] = { len(flipStack) - 1 }
+        edgeRefs = [ flipStack, refTetInds ]
+        flipSet = set()
+        for e in self._resolved:
+            flipSet.add(e)
+            _addEdgeReference( self._tri.edge(e), edgeRefs )
         splitFace = True
         splitIndices = set()
         while splitFace:
             splitFace = False
 
             # For each boundary face f that we have not yet split, check
-            # whether it is not necessary to split f.
-            for f in self._tri.triangles():
-                if ( not f.isBoundary() ) or ( f.index() in splitIndices ):
+            # whether it has become necessary to split f.
+            for f in self._tri.boundaryComponent(0).triangles():
+                if f.index() in splitIndices:
                     continue
 
-                # If we need to flip two of the edges of f, then we first
-                # need to split f by flipping its third edge.
+                # If we need to flip two of the edges of f, then we need to
+                # split f by flipping its third edge.
                 unflippedEdgeNums = {0,1,2}
                 for e in range(3):
                     if f.edge(e).index() in flipSet:
@@ -1398,172 +1292,21 @@ class HeegaardBuilder:
                 if len(unflippedEdgeNums) == 1:
                     edge = f.edge( unflippedEdgeNums.pop() )
                     flipSet.add( edge.index() )
-                    emb = edge.embedding(0)
-
-                    # Update both flipStack and refTetInds.
-                    refTet = emb.tetrahedron()
-                    flipStack.append( ( refTet, emb.edge() ) )
-                    if refTet.index() in refTetInds:
-                        refTetInds[ refTet.index() ].add(
-                                len(flipStack) - 1 )
-                    else:
-                        refTetInds[ refTet.index() ] = {
-                                len(flipStack) - 1 }
+                    _addEdgeReference( edge, edgeRefs )
                     splitFace = True
                     splitIndices.add( f.index() )
 
         # Flip every edge in flipStack. Since we know that the last few flips
-        # correspond to the resolved curves, we can also fold these now.
-        #NOTE The number of components of our underlying curve decreases as
-        #   we attach discs, so we need to remember the *initial* number.
-        curveCount = self.countComponents()
+        # correspond to the resolved petals, we can also fold these now.
+        foldCount = self.countResolved()
         while flipStack:
-            tet, edgeNum = flipStack.pop()
+            emb = flipStack.pop()
             newEdge = self._flipEdgeImpl(
-                    tet.edge(edgeNum), [ flipStack, refTetInds ] )
-            if len(flipStack) < curveCount:
+                    emb.tetrahedron().edge( emb.edge() ), edgeRefs )
+            if len(flipStack) < foldCount:
                 self._fold(newEdge)
 
-        # To complete the construction, fold until we have no boundary left.
+        # We should now be left with sphere boundary. Complete the
+        # construction by filling with a ball.
         self._fillBall()
         return True
-
-
-# Test code.
-if __name__ == "__main__":
-    #TODO Tidy up tests.
-    initTri = Triangulation3.fromIsoSig( "eHbecadjk" )
-#    compsMsg = "{} component(s):"
-#    edgeMsg = "After layering on edge {}:"
-#    subMsg = "    Switches: {}. Resolvable: {}. Off-diagonal: {}."
-    #TODO Test invalid inputs too.
-    testCases = [
-#            (0,0,0,2,2,2,3,1,1),    # 1-component
-            (1,0,1,2,3,2,3,2,1),    # 2-component
-#            (3,5,4,2,3,5,4,5,3),    # 3-component
-#            (1,1,0,1,0,0,0,0,0),    # 1-component
-#            (5,5,4,0,5,5,5,4,0),    # 3-component
-            (1,2,3,4,5,2,3,4,1) ]   # 2-component
-    print()
-    for w in testCases:
-        oldTri = Triangulation3(initTri)
-        hb = HeegaardBuilder( oldTri, w )
-        hb.resolveAll()
-        hb.fillHandlebody()
-        newTri = hb.triangulation()
-
-        #TODO
-        # The triangulation newTri should be closed.
-        print( "Valid: {}. Closed: {}. Orbl: {}.".format(
-            newTri.isValid(), newTri.isClosed(), newTri.isOrientable() ) )
-        sim = Triangulation3(newTri)
-        sim.intelligentSimplify()
-        sim.intelligentSimplify()
-        print( "Final size: {}. Original: {}. Simplified: {}.".format(
-            newTri.size(), newTri.isoSig(), sim.isoSig() ) )
-        print()
-
-        #TODO Make following preliminary test more comprehensive.
-        hbChoice = HeegaardBuilder( Triangulation3(initTri), w )
-        count = 0
-        minSize = None
-        minSig = None
-        maxSize = 0
-        maxSig = None
-        for r in hbChoice.resolveInAllWays():
-            count += 1
-            r.fillHandlebody()
-            resTri = r.triangulation()
-            if minSize is None or resTri.size() < minSize:
-                minSize = resTri.size()
-                minSig = resTri.isoSig()
-            if resTri.size() > maxSize:
-                maxSize = resTri.size()
-                maxSig = resTri.isoSig()
-        print( "Total: {}.".format(count) )
-        print( "MinSize: {}. MinSig: {}.".format( minSize, minSig ) )
-        print( "MaxSize: {}. MaxSig: {}.".format( maxSize, maxSig ) )
-        #choices = hbChoice.resolveUntilChoice()
-        #if choices is not None:
-        #    print( "Resolved until following choices: {}.".format(
-        #        choices[0] ) )
-        #    for x in choices[1]:
-        #        print( "    {}".format(x) )
-        print()
-#    # Basic operation tests.
-#    for w, e in testCases:
-#        tri = Triangulation3(initTri)
-#        hb = HeegaardBuilder( tri, w )
-#
-#        # Test components.
-#        comps = hb.countUnresolved()
-#        print( compsMsg.format(comps) )
-#        for c in range(comps):
-#            print( subMsg.format( hb._countSwitchesInComponent(c),
-#                hb.recogniseResolvable(c), hb._recogniseOffDiagonal(c) ) )
-#
-#        # Test layering.
-#        hb.flipEdge( tri.edge(e) )
-#        print( edgeMsg.format(e) )
-#        for c in range(comps):
-#            print( subMsg.format( hb._countSwitchesInComponent(c),
-#                hb.recogniseResolvable(c), hb._recogniseOffDiagonal(c) ) )
-#
-#        # Test bubble/isotopy.
-#        tri = Triangulation3(initTri)
-#        hb = HeegaardBuilder( tri, w )
-#        iso = hb._isotopeOffEdge( tri.edge(0), 0 )
-#        print( "Isotopy: {}.".format(iso) )
-#        if iso:
-#            print( hb._weights )
-#            comps = hb.countUnresolved()
-#            for c in range(comps):
-#                print( subMsg.format( hb._countSwitchesInComponent(c),
-#                    hb.recogniseResolvable(c),
-#                    hb._recogniseOffDiagonal(c) ) )
-#        #print( "Bubble: {}.".format(
-#        #    hb._bubblePoints( tri.edge(0), 0 ) ) )
-#        print()
-#
-#    # Test clearing edge 7 of testCases[4].
-#    print( "Clear edge." )
-#    tri = Triangulation3(initTri)
-#    hb = HeegaardBuilder( tri, testCases[4][0] )
-#    hb._clearEdge( tri.edge(7) )
-#    print( hb._weights )
-#    print()
-#
-#    # Test resolving (to edge 7 of testCases[4]).
-#    print( "Resolve one component." )
-#    tri = Triangulation3(initTri)
-#    hb = HeegaardBuilder( tri, testCases[4][0] )
-#    for i in range(3):
-#        res = hb.resolveComponent(0)
-#        print( "Resolve component {}: {}.".format( i, res ) )
-#        if res:
-#            print( "Resolved edge indices: {}.".format(
-#                hb._resolvedEdges ) )
-#            print( "Weights: {}.".format( hb._weights ) )
-#            break
-#    print()
-#
-#    # Test full construction (on testCases[1] and testCases[5]).
-#    for c in {1,5}:
-#        print( "Resolve all components, case {}.".format(c) )
-#        tri = Triangulation3(initTri)
-#        hb = HeegaardBuilder( tri, testCases[c][0] )
-#        hb.resolveAll()
-#        #TODO Rename HeegaardBuilder.triangulation()?
-#        print( "Final size: {}. Resolved edges: {}.".format(
-#            hb.triangulation().size(), hb._resolvedEdges ) )
-#        print()
-#        print( "Full construction, case {}.".format(c) )
-#        mfd = hb.fillHandlebody()
-#        print( "Valid: {}. Closed: {}. Orbl: {}.".format(
-#            mfd.isValid(), mfd.isClosed(), mfd.isOrientable() ) )
-#        sim = Triangulation3(mfd)
-#        sim.intelligentSimplify()
-#        sim.intelligentSimplify()
-#        print( "Final size: {}. Original: {}. Simplified: {}.".format(
-#            mfd.size(), mfd.isoSig(), sim.isoSig() ) )
-#        print()
