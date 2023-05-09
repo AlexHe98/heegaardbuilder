@@ -1,7 +1,7 @@
 """
 Small test suite for the HeegaardBuilder class.
 """
-from heegaardbuilder import HeegaardBuilder
+from heegaardbuilder import *
 from regina import *
 
 
@@ -11,28 +11,35 @@ if __name__ == "__main__":
     sigGenus2 = "eHbecadjk"
     sigGenus3 = "hHbLbqiabegeti"
 
-    # Cases that should raise ValueError upon setting bouquet.
+    # Cases that should raise HeegaardError upon setting bouquet.
     print( "============================================================" )
-    print( " Genus 2: ValueError upon setting bouquet" )
+    print( " Genus 2: HeegaardError upon setting bouquet" )
     print( "------------------------------------------------------------" )
     print()
     setError = [
-            [ (0,0,0,0,0,0,0,0), set(), "Wrong number of weights" ],
-            [ (0,0,0,0,0,0,0,-1,0), set(), "Negative weight" ],
-            [ (0,1,0,0,0,0,0,0,0), {1}, "Resolved edge with weight > 0" ],
-            [ (1,3,2,0,2,3,2,0,2), set(), "Matching constraints fail" ],
-            [ (0,0,0,2,2,1,2,0,0), {0,2}, "Wrong number of roots" ],
-            [ (0,0,0,2,2,2,3,1,1), {0,2}, "Normal curve" ],
-            [ (0,0,0,0,0,0,0,0,0), {0,2}, "Transverse Heegaard petals" ] ]
+            [ (0,0,0,0,0,0,0,0), set(),
+                "Wrong number of weights", WrongNumberOfWeights ],
+            [ (0,0,0,0,0,0,0,-1,0), set(),
+                "Negative weight", NegativeEdgeWeight ],
+            [ (0,1,0,0,0,0,0,0,0), {1},
+                "Resolved edge with weight > 0", WeightOnResolvedEdge ],
+            [ (1,3,2,0,2,3,2,0,2), set(),
+                "Matching constraints fail", FailedMatchingConstraints ],
+            [ (0,0,0,2,2,1,2,0,0), {0,2},
+                "Wrong number of roots", NotCombinatoriallyAdmissible ],
+            [ (0,0,0,2,2,2,3,1,1), {0,2},
+                "Normal curve", NormalCurveAfterResolving ],
+            [ (0,0,0,0,0,0,0,0,0), {0,2},
+                "Transverse Heegaard petals", TransverseHeegaardPetals ] ]
     tri = Triangulation3.fromIsoSig(sigGenus2)
-    for w, r, name in setError:
+    for w, r, name, exception in setError:
         print(name)
         try:
             hb.setBouquet( tri, w, r )
-        except ValueError as e:
+        except exception as e:
             print( "    {}".format(e) )
         else:
-            raise RuntimeError( "Incorrectly set bouquet." )
+            raise RuntimeError( "FAILED." )
         print()
     newTet = tri.layerOn( tri.edge(1) )
     intEdgeInd = newTet.edge(0).index()
@@ -41,19 +48,19 @@ if __name__ == "__main__":
     wList[intEdgeInd] = 1
     try:
         hb.setBouquet( tri, tuple(wList), set() )
-    except ValueError as e:
+    except WeightOnInternalEdge as e:
         print( "    {}".format(e) )
     else:
-        raise RuntimeError( "Incorrectly set bouquet." )
+        raise RuntimeError( "FAILED." )
     print()
-    print( "Internal resolved edge" )
+    print( "Resolved internal edge" )
     w = (0,0,0,0,0,0,0,0,0,0)
     try:
         hb.setBouquet( tri, w, {intEdgeInd} )
-    except ValueError as e:
+    except ResolvedInternalEdge as e:
         print( "    {}".format(e) )
     else:
-        raise RuntimeError( "Incorrectly set bouquet." )
+        raise RuntimeError( "FAILED." )
     print()
     print( "PASSED." )
     print()
@@ -76,7 +83,7 @@ if __name__ == "__main__":
     print( "HeegaardBuilder.resolveAllPetals()" )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except EmptyHeegaardBuilder as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to identify empty HeegaardBuilder." )
@@ -84,7 +91,7 @@ if __name__ == "__main__":
     print( "HeegaardBuilder.resolveGreedily()" )
     try:
         hb.resolveGreedily()
-    except ValueError as e:
+    except EmptyHeegaardBuilder as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to identify empty HeegaardBuilder." )
@@ -92,7 +99,7 @@ if __name__ == "__main__":
     print( "HeegaardBuilder.resolveUntilChoice()" )
     try:
         hb.resolveUntilChoice()
-    except ValueError as e:
+    except EmptyHeegaardBuilder as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to identify empty HeegaardBuilder." )
@@ -101,7 +108,7 @@ if __name__ == "__main__":
     try:
         for _ in hb.resolveInAllWays():
             pass
-    except ValueError as e:
+    except EmptyHeegaardBuilder as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to identify empty HeegaardBuilder." )
@@ -109,7 +116,7 @@ if __name__ == "__main__":
     print( "HeegaardBuilder.fillHandlebody()" )
     try:
         hb.fillHandlebody()
-    except ValueError as e:
+    except EmptyHeegaardBuilder as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to identify empty HeegaardBuilder." )
@@ -160,8 +167,8 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.isResolvable( tri.edge(1) )
-    except ValueError as e:
-        print( "    Correctly raised ValueError: {}".format(e) )
+    except IsotopicHeegaardPetals as e:
+        print( "    Correctly raised IsotopicHeegaardPetals: {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect isotopic petals." )
     print( "    Passed." )
@@ -169,9 +176,9 @@ if __name__ == "__main__":
     print( "PASSED." )
     print()
 
-    # Cases that should raise ValueError while resolving.
+    # Cases that should raise HeegaardError while resolving.
     print( "============================================================" )
-    print( " Genus 2: ValueError while resolving" )
+    print( " Genus 2: HeegaardError while resolving" )
     print( "------------------------------------------------------------" )
     print()
     print( "No reducible edges" )
@@ -183,7 +190,7 @@ if __name__ == "__main__":
         hb.flipEdge( emb.tetrahedron().edge( emb.edge() ) )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except NoReducibleEdge as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError(
@@ -195,7 +202,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except NormalCurveAfterResolving as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect normal curve." )
@@ -206,7 +213,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except TransverseHeegaardPetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect transverse petals." )
@@ -217,7 +224,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w, {1} )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except DisconnectedComplement as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect disconnected complement." )
@@ -320,9 +327,9 @@ if __name__ == "__main__":
     print( "PASSED." )
     print()
 
-    # Genus 3 cases that should raise ValueError.
+    # Genus 3 cases that should raise HeegaardError.
     print( "============================================================" )
-    print( " Genus 3: Cases that should raise ValueError" )
+    print( " Genus 3: Cases that should raise HeegaardError" )
     print( "------------------------------------------------------------" )
     print()
     print( "Isotopic petals while resolving" )
@@ -331,7 +338,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except IsotopicHeegaardPetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect isotopic petals." )
@@ -342,7 +349,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except TransverseHeegaardPetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect transverse petals." )
@@ -353,7 +360,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except ValueError as e:
+    except DisconnectedComplement as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect disconnected complement." )

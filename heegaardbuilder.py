@@ -5,6 +5,183 @@ from regina import *
 
 
 #############################################################################
+#                             Custom Exceptions                             #
+#                             =================                             #
+#############################################################################
+
+
+class HeegaardError(Exception):
+    """
+    Raised when a HeegaardBuilder object encounters an error.
+    """
+    pass
+
+
+class EmptyHeegaardBuilder(HeegaardError):
+    """
+    Raised when attempting to perform an operation on a HeegaardBuilder
+    object that is empty.
+    """
+    def __init__(self):
+        super().__init__()
+
+
+class BadTriangulation(HeegaardError):
+    """
+    Raised when a HeegaardBuilder object is given a bad triangulation.
+    """
+    def __init__( self, badProperty ):
+        msg = "Triangulation is {}.".format(badProperty)
+        super().__init__(msg)
+
+
+class BadBouquet(HeegaardError):
+    """
+    Raised when a HeegaardBuilder object detects a bad Heegaard bouquet.
+    """
+    pass
+
+
+class WrongNumberOfWeights(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is given a triangulation and a list
+    of edge weights such that the number of edges in the triangulation
+    doesn't match the number of weights.
+    """
+    def __init__( self, numWeights, numEdges ):
+        msg = ( "Given {} edge weights, but the ".format( numWeights ) +
+                "triangulation has {} edges.".format( numEdges ) )
+        super().__init__(msg)
+
+
+class NegativeEdgeWeight(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is given a negative edge weight.
+    """
+    def __init__( self, edgeIndex, weight ):
+        msg = ( "Edge weights must be non-negative, but edge " +
+                "{} has weight {}.".format( edgeIndex, weight ) )
+        super().__init__(msg)
+
+
+class WeightOnInternalEdge(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is given a nonzero edge weight on an
+    internal edge.
+    """
+    def __init__( self, edgeIndex, weight ):
+        msg = ( "Edge {} is internal, so its weight ".format(edgeIndex) +
+                "must be 0, not {}.".format(weight) )
+        super().__init__(msg)
+
+
+class ResolvedInternalEdge(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is asked to assign an internal edge
+    as a resolved edge.
+    """
+    def __init__( self, edgeIndex ):
+        msg = ( "Edge {} is internal, so it cannot be ".format(edgeIndex) +
+                "assigned as a resolved edge." )
+        super().__init__(msg)
+
+
+class WeightOnResolvedEdge(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is given a nonzero edge weight on an
+    edge that is supposed to be resolved.
+    """
+    def __init__( self, edgeIndex, weight ):
+        msg = ( "Edge {} is resolved, so its weight ".format(edgeIndex) +
+                "must be 0, not {}.".format(weight) )
+        super().__init__(msg)
+
+
+class FailedMatchingConstraints(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object is given edge weights that fail to
+    satisfy the matching constraints for a Heegaard bouquet.
+    """
+    def __init__( self, faceIndex ):
+        msg = ( "Edge weights fail to satisfy the matching constraints " +
+                "in triangle {}.".format(faceIndex) )
+        super().__init__(msg)
+
+
+class NotCombinatoriallyAdmissible(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object detects that the stored Heegaard
+    bouquet is not combinatorially admissible.
+    """
+    def __init__(self):
+        msg = ( "The Heegaard bouquet is not combinatorially admissible." )
+        super().__init__(msg)
+
+
+class NotTopologicallyAdmissible(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object detects that the stored Heegaard
+    bouquet is not (topologically) admissible.
+    """
+    pass
+
+
+class TransverseHeegaardPetals(NotTopologicallyAdmissible):
+    """
+    Raised when a HeegaardBuilder object encounters a pair of edges that form
+    resolved Heegaard petals that meet transversely.
+    """
+    def __init__( self, myEdgeInd, yourEdgeInd ):
+        msg = ( "Edges {} and {} form a ".format( myEdgeInd, yourEdgeInd ) +
+                "pair of resolved Heegaard petals that meet transversely." )
+        super().__init__(msg)
+
+
+class DisconnectedComplement(NotTopologicallyAdmissible):
+    """
+    Raised when a HeegaardBuilder object detects that cutting along the
+    stored Heegaard bouquet would disconnect the boundary surface of the
+    stored triangulation.
+    """
+    def __init__( self, numComponents ):
+        msg = ( "After cutting along the Heegaard bouquet, the boundary " +
+                "surface splits into {} components.".format(numComponents) )
+        super().__init__(msg)
+
+
+class NormalCurveAfterResolving(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object detects a normal curve that is left
+    over after resolving all Heegaard petals.
+    """
+    def __init__(self):
+        msg = ( "A normal curve was left over after resolving all " +
+                "Heegaard petals." )
+        super().__init__(msg)
+
+
+class IsotopicHeegaardPetals(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object detects an edge that is incident to
+    two or more Heegaard petals that are all isotopic to each other.
+    """
+    def __init__( self, edgeIndex, numIsotopicPetals ):
+        msg = ( "Edge {} meets {} ".format( edgeIndex, numIsotopicPetals ) +
+                "Heegaard petals that are isotopic to each other." )
+
+
+class NoReducibleEdge(BadBouquet):
+    """
+    Raised when a HeegaardBuilder object cannot find a reducible edge, which
+    can only happen if there is a normal curve.
+    """
+    def __init__(self):
+        msg = ( "Could not find a reducible edge, which means that there " +
+                "must be a normal curve." )
+        super().__init__(msg)
+
+
+#############################################################################
 #                              Helper routines                              #
 #                              ===============                              #
 #############################################################################
@@ -17,9 +194,11 @@ def _faceNumberings(e):
 
     In detail, this routine returns a pair (f, v) such that:
     --> f[0] is the index of the boundary triangle given by
-            e.embedding(0).tetrahedron().triangle(3);
+            emb.tetrahedron().triangle( emb.vertices()[3] ),
+        where emb = e.embedding(0);
     --> f[1] is the index of the boundary triangle given by
-            e.embedding( e.degree() - 1 ).tetrahedron().triangle(2);
+            emb.tetrahedron().triangle( emb.vertices()[2] ),
+        where emb = e.embedding( e.degree() - 1 );
     --> for i,j in {0,1}, v[i][j] is the vertex number of triangle f[i]
         corresponding to vertex j of the edge e; and
     --> for i in {0,1}, v[i][2] is the vertex number of triangle f[i]
@@ -43,19 +222,27 @@ def _faceNumberings(e):
 
 def _checkTri(tri):
     """
-    Checks that the triangulation tri is valid, orientable, one-vertex
-    and has exactly one boundary component.
+    Checks that the triangulation tri is valid, orientable, one-vertex, and
+    neither closed nor ideal.
+
+    In particular, since tri cannot be closed or ideal, it must have at least
+    one boundary component, and the boundary components are all real (not
+    ideal). The one-vertex assumption further implies that tri has exactly
+    one boundary component.
+
+    This routine raises a BadTriangulation exception if any of the stated
+    conditions fails.
     """
     if not tri.isValid():
-        raise ValueError( "Triangulation is not valid." )
+        raise BadTriangulation( "invalid" )
     if not tri.isOrientable():
-        raise ValueError( "Triangulation is not orientable." )
+        raise BadTriangulation( "not orientable" )
     if tri.countVertices() != 1:
-        raise ValueError( "Triangulation is not one-vertex." )
-    bdryComps = tri.countBoundaryComponents()
-    if bdryComps != 1:
-        raise ValueError( "Triangulation must have exactly one boundary " +
-                "component, not {}.".format(bdryComps) )
+        raise BadTriangulation( "not one-vertex" )
+    if tri.isClosed():
+        raise BadTriangulation( "closed" )
+    if tri.isIdeal():
+        raise BadTriangulation( "ideal" )
 
 
 def _checkBouquet( tri, weights, resolved ):
@@ -73,32 +260,30 @@ def _checkBouquet( tri, weights, resolved ):
     (5) and (6) in the documentation for the HeegaardBuilder.setBouquet()
     routine.
 
+    If any of these conditions fails, then this routine will raise a subclass
+    of BadBouquet; the specific subclass depends on precisely which condition
+    failed.
+
     Pre-condition:
-    --> tri is valid, orientable, one-vertex, and has exactly one boundary
-        component.
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     """
     # Check that weights and resolved have the correct format.
     givenNum = len(weights)
     requiredNum = tri.countEdges()
     if givenNum != requiredNum:
-        raise ValueError( "Given {} edge weights, but ".format(givenNum) +
-                "the triangulation has {} edges.".format(requiredNum) )
+        raise WrongNumberOfWeights( givenNum, requiredNum )
     for i, wt in enumerate(weights):
         if wt < 0:
-            raise ValueError( "Edge weights must be non-negative, but " +
-                    "edge {} has weight {}.".format( i, wt ) )
+            raise NegativeEdgeWeight( i, wt )
         elif wt > 0:
             if not tri.edge(i).isBoundary():
-                raise ValueError( "Edge {} is internal, so ".format(i) +
-                        "its weight must be 0, not {}.".format(wt) )
+                raise WeightOnInternalEdge( i, wt )
     for i in resolved:
         if ( i < 0 or i >= tri.countEdges() or
                 not tri.edge(i).isBoundary() ):
-            raise ValueError( "Edge {} is internal, so it ".format(i) +
-                    "cannot be assigned as a resolved edge." )
+            raise ResolvedInternalEdge(i)
         if weights[i] > 0:
-            raise ValueError( "Edge {} is resolved, so its ".format(i) +
-                    "weight must be 0, not {}.".format( weights[i] ) )
+            raise WeightOnResolvedEdge( i, weights[i] )
 
 
 def _computeArcCoords( tri, weights ):
@@ -116,7 +301,9 @@ def _computeArcCoords( tri, weights ):
     (b) the total weight of the three edges of F is even.
     If condition (a) holds, then F contains one or more root arcs. Otherwise,
     if condition (a) fails, then F must contain only normal arcs, in which
-    case condition (b) must hold. This routine raises ValueError if the
+    case condition (b) must hold.
+
+    This routine raises a FailedMatchingConstraints exception if these
     matching constraints fail.
 
     The auxiliary information consists of a tuple with the following entries:
@@ -125,8 +312,7 @@ def _computeArcCoords( tri, weights ):
         is nonzero.
 
     Pre-condition:
-    --> tri is valid, orientable, one-vertex, and has exactly one
-        boundary component.
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> weights is formatted correctly, as specified in the documentation for
         the _checkBouquet() routine.
     """
@@ -167,8 +353,7 @@ def _computeArcCoords( tri, weights ):
         # Otherwise, this face must contain only normal arcs, in which
         # case the total weight must be even.
         if totalWt % 2 != 0:
-            raise ValueError( "Edge weights fail to satisfy the matching " +
-                    "constraints in triangle {}.".format( face.index() ) )
+            raise FailedMatchingConstraints( face.index() )
         for i in range(3):
             normal[i] = ( wt[i-1] + wt[i-2] - wt[i] ) // 2
             if normal[i] > 0:
@@ -186,9 +371,11 @@ def _checkTangential( tri, resolved ):
     list of resolved edge indices, this routine checks that all the edges in
     R meet tangentially at the vertex of tri.
 
+    This routine raises a TransverseHeegaardPetals exception if this
+    condition fails.
+
     Pre-condition:
-    --> tri is valid, orientable, one-vertex, and has exactly one boundary
-        component.
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
     --> The Heegaard bouquet given by the edges in R is combinatorially
@@ -204,9 +391,7 @@ def _checkTangential( tri, resolved ):
             if edgeInd in stack:
                 topInd = stack.pop()
                 if topInd != edgeInd:
-                    raise ValueError( "Edges {} and ".format(topInd) +
-                            "{} form Heegaard petals ".format(edgeInd) +
-                            "that meet transversely." )
+                    raise TransverseHeegaardPetals( topInd, edgeInd )
             else:
                 stack.append(edgeInd)
 
@@ -217,9 +402,11 @@ def _checkComplement( tri, resolved ):
     list of resolved edge indices, this routine checks that the boundary
     surface of tri remains connected after cutting along the edges in R.
 
+    This routine raises a DisconnectedComplement exception if this condition
+    fails.
+
     Pre-condition:
-    --> tri is valid, orientable, one-vertex, and has exactly one boundary
-        component.
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
     --> The Heegaard bouquet given by the edges in R is combinatorially
@@ -268,20 +455,26 @@ def _checkComplement( tri, resolved ):
 
     # If we exit the above loop, then we never managed to get the number
     # of components down to one.
-    raise ValueError( "After cutting along the Heegaard bouquet, the " +
-            "boundary surface should remain connected. However, it " +
-            "actually has {} components.".format(components) )
+    raise DisconnectedComplement(components)
 
 
 def _checkAdmissible( tri, resolved ):
     """
     Letting R denote the collection of boundary edges of tri given by the
     list of resolved edge indices, this routine checks that R describes a
-    (topologically) admissibly Heegaard bouquet in the boundary of tri.
+    (topologically) admissible Heegaard bouquet in the boundary of tri.
+
+    This routine raises a NotTopologicallyAdmissible exception if this
+    condition fails. More specifically:
+    (1) All the edges in R must meet tangentially at the vertex of tri. This
+        routine raises a TransverseHeegaardPetals exception if this condition
+        fails.
+    (2) The boundary surface of tri must remain connected after cutting along
+        the edges in R. This routine raises a DisconnectedComplement
+        exception if this condition fails.
 
     Pre-condition:
-    --> tri is valid, orientable, one-vertex, and has exactly one boundary
-        component.
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
     --> The Heegaard bouquet given by the edges in R is combinatorially
@@ -505,22 +698,28 @@ class HeegaardBuilder:
 
         The optional arcInfo variable, if provided, should be a 2-tuple
         containing auxiliary information as returned by the
-            HeegaardBuilder._computeArcCoords()
+            _computeArcCoords()
         routine. In the case where this auxiliary information is provided,
-        this routine will raise ValueError if there are no root arcs, but
-        there is still at least one normal arc (since this would imply that
-        we have a normal curve).
+        this routine will raise a NormalCurveAfterResolving exception if
+        there are no root arcs, but there is still at least one normal arc
+        (since this would imply that we have a normal curve).
 
-        This routine will also raise ValueError if every Heegaard petal is
-        resolved, and the Heegaard bouquet is not (topologically) admissible.
+        Moreover, if every Heegaard petal is resolved, then this routine will
+        raise a NotTopologicallyAdmissible exception if the Heegaard bouquet
+        is not (topologically) admissible. More specifically:
+        --> All the Heegaard petals must meet tangentially at the vertex of
+            tri. This routine raises a TransverseHeegaardPetals exception if
+            this condition fails.
+        --> The boundary surface of tri must remain connected after cutting
+            along all of the Heegaard petals. This routine raises a
+            DisconnectedComplement exception if this condition fails.
         """
         # Check for normal curves if it is easy to do so. In particular, this
         # check only occurs if every Heegaard petal is resolved.
         if arcInfo is not None:
             rootArcs, hasNonzero = arcInfo
             if rootArcs == 0 and hasNonzero:
-                raise ValueError( "Found a normal curve after resolving " +
-                "all Heegaard petals." )
+                raise NormalCurveAfterResolving()
 
         # If necessary, check that the Heegaard bouquet is admissible.
         if tri.isValid() and tri.countBoundaryComponents() == 1:
@@ -545,21 +744,35 @@ class HeegaardBuilder:
         triangulation tri by directly specifying edge weights and resolved
         edge indices.
 
-        The input must be "reasonable" in the following sense:
-        (1) tri must be valid, orientable, one-vertex, and have exactly one
-            boundary component;
-        (2) weights must be a list or tuple consisting of n non-negative
-            integers, where n = tri.countEdges();
-        (3) for each i, weights[i] must be 0 if tri.edge(i) is internal;
-        (4) if we assign the value weights[i] to tri.edge(i) for every i such
+        This routine raises a HeegaardError if the input is not "reasonable".
+        More specifically:
+        (1) The triangulation tri must be valid, orientable, one-vertex, and
+            neither closed nor ideal; in particular, this implies that tri
+            has exactly one boundary component, and that this boundary
+            component is real. This routine raises a BadTriangulation
+            exception if tri fails to satisfy any of these conditions.
+        (2) The given weights must be a list or tuple of non-negative
+            integers, such that len(weights) == tri.countEdges(). If this
+            condition fails, then this routine raises one of the following
+            exceptions:
+            --> WrongNumberOfWeights, if len(weights) != tri.countEdges(); or
+            --> NegativeEdgeWeight, if any of the weights is negative.
+        (3) For each i, weights[i] must be 0 if tri.edge(i) is internal. This
+            routine raises a WeightOnInternalEdge exception if this condition
+            fails.
+        (4) If we assign the value weights[i] to tri.edge(i) for every i such
             that tri.edge(i) is boundary, then these values satisfy the
             matching constraints (described below) for a Heegaard bouquet in
-            the boundary of tri;
-        (5) resolved must be a set (empty by default) consisting of indices
-            of boundary edges tri; and
-        (6) for each i in resolved, weights[i] must be 0.
-        If the input is not reasonable, then this routine raises ValueError,
-        and does not change the currently stored Heegaard bouquet.
+            the boundary of tri. This routine raises a
+            FailedMatchingConstraints exception if this condition fails.
+        (5) The resolved set (empty by default) must consist of indices of
+            boundary edges of tri. This routine raises a ResolvedInternalEdge
+            exception if any of the elements of resolved gives the index of
+            an internal edge of tri.
+        (6) For each i in resolved, weights[i] must be 0. This routine raises
+            a WeightOnResolvedEdge exception if this condition fails.
+        Moreover, if the input is not "reasonable", then this routine does
+        not change the currently stored Heegaard bouquet.
 
         The matching constraints require that for each triangular face F in
         the boundary of tri, either:
@@ -577,29 +790,47 @@ class HeegaardBuilder:
         In general, this routine does not check for the presence of normal
         curves. The only exception is when the Heegaard bouquet consists
         entirely of resolved petals, in which case normal curves exist if and
-        only if we have one or more nonzero edge weights; this routine raises
-        ValueError if it detects normal curves in this particular case.
+        only if we have one or more nonzero edge weights; in this particular
+        case, this routine will raise a NormalCurveAfterResolving exception
+        if it detects a normal curve.
 
-        This routine also raises ValueError if the Heegaard bouquet is not
-        combinatorially admissible. However, for (topological) admissibility,
-        this routine only raises ValueError if this condition fails in the
-        special case where every Heegaard petal is resolved.
+        This routine also raises a NotCombinatoriallyAdmissible exception if
+        the Heegaard bouquet is not combinatorially admissible.
+
+        However, in general, this routine does not check whether the Heegaard
+        bouquet is (topologically) admissible. The only exception is when
+        every Heegaard petal is resolved, in which case this routine will
+        raise a NotTopologicallyAdmissible exception if the Heegaard bouquet
+        is not admissible. More specifically, depending on precisely how
+        admissibility fails, this routine actually raises:
+        --> a TransverseHeegaardPetals exception if there are Heegaard petals
+            that meet transversely; or
+        --> a DisconnectedComplement exception if the boundary surface of tri
+            becomes disconnected after cutting along the Heegaard petals.
 
         Warning:
-        --> This class stores direct references to tri, weights and resolved.
-            You are allowed to modify these objects using a routine other
-            than one of the routines provided by this HeegaardBuilder, but
-            doing so will invalidate the Heegaard bouquet; as a result,
-            subsequent attempts to work with this Heegaard bouquet will lead
-            to undefined behaviour.
+        --> This class stores a direct reference to the given triangulation
+            tri. This has two consequences:
+            (1) The routines provided by this class might directly modify
+                the triangulation tri.
+            (2) You are allowed to modify the triangulation tri using a
+                routine other than one of the routines provided by this
+                class, but doing so will invalidate the Heegaard bouquet; as
+                a result, subsequent attempts to work with this Heegaard
+                bouquet will lead to undefined behaviour.
+
+        Pre-condition:
+        --> The elements of resolved must correspond to indices of edges of
+            tri. In other words, each element must be a non-negative integer
+            strictly less than tri.countEdges().
         """
         # If the input is not "reasonable", then the following routines will
-        # raise ValueError.
+        # raise a HeegaardError.
         _checkTri(tri)
         _checkBouquet( tri, weights, resolved )
         arcCoords, arcInfo = _computeArcCoords( tri, weights )
 
-        # Also raise ValueError if the Heegaard bouquet is not
+        # Also raise a HeegaardError if the Heegaard bouquet is not
         # combinatorially admissible.
         rootArcs = arcInfo[0]
         chi = tri.boundaryComponent(0).eulerChar() # Equal to (2 - 2*g)
@@ -607,14 +838,14 @@ class HeegaardBuilder:
             # Equivalently, rootArcs is not equal to 2*(g - r), where g is
             # the genus of the boundary surface of tri, and r is the number
             # of resolved petals.
-            raise ValueError( "Heegaard bouquet is not combinatorially " +
-                    "admissible." )
+            raise NotCombinatoriallyAdmissible()
 
         # Since we have checked all the necessary conditions, we can now set
         # the Heegaard bouquet. Note that the following routine will, if
         # possible, use the optional arcInfo variable to detect the presence
         # of normal curves.
-        self._setBouquetImpl( tri, weights, resolved, arcCoords, arcInfo )
+        self._setBouquetImpl(
+                tri, list(weights), set(resolved), arcCoords, arcInfo )
 
     def setClone( self, other ):
         """
@@ -718,7 +949,8 @@ class HeegaardBuilder:
         create a new edge that forms a resolved petal?
 
         This routine could detect two Heegaard petals that are isotopic; if
-        it does detect such petals, then it raises ValueError.
+        it does detect such petals, then it raises an IsotopicHeegaardPetals
+        exception.
 
         Pre-condition:
         --> e is a boundary edge of self.triangulation().
@@ -762,9 +994,7 @@ class HeegaardBuilder:
         if newResolvedPetals == 1:
             return True
         else:
-            raise ValueError( "Edge {} meets ".format( e.index() ) +
-                    "{} Heegaard petals ".format(newResolvedPetals) +
-                    "that are isotopic to each other." )
+            raise IsotopicHeegaardPetals( e.index(), newResolvedPetals )
 
     def _flipEdgeImpl( self, e, edgeRefs=None ):
         """
@@ -780,11 +1010,20 @@ class HeegaardBuilder:
         attach a disc by folding along this edge.
 
         If flipping the edge e causes every Heegaard petal to become
-        resolved, then this routine conclusively checks that the following
-        conditions are satisfied:
-        (a) There are no normal curves.
-        (b) The Heegaard bouquet is (topologically) admissible.
-        This routine raises ValueError if either of these conditions fails.
+        resolved, then this routine conclusively checks that the stored
+        Heegaard bouquet is "sensible". In detail:
+        (a) Since all the Heegaard petals are resolved, there must be no
+            normal curves left over. This routine raises a
+            NormalCurveAfterResolving exception if this condition fails.
+        (b) The Heegaard bouquet must be (topologically) admissible. This
+            routine raises a NotTopologicallyAdmissible exception if this
+            condition fails. More specifically:
+            --> All the Heegaard petals must meet tangentially at the vertex
+                of tri. This routine raises a TransverseHeegaardPetals
+                exception if this particular condition fails.
+            --> The boundary surface of tri must remain connected after
+                cutting along all of the Heegaard petals. This routine raises
+                a DisconnectedComplement exception if this condition fails.
 
         If edgeRefs is None (the default), then this routine has no
         additional functionality.
@@ -896,11 +1135,20 @@ class HeegaardBuilder:
         flip e by layering a new tetrahedron across e.
 
         If flipping the edge e causes every Heegaard petal to become
-        resolved, then this routine conclusively checks that the following
-        conditions are satisfied:
-        (a) There are no normal curves.
-        (b) The Heegaard bouquet is (topologically) admissible.
-        This routine raises ValueError if either of these conditions fails.
+        resolved, then this routine conclusively checks that the stored
+        Heegaard bouquet is "sensible". In detail:
+        (a) Since all the Heegaard petals are resolved, there must be no
+            normal curves left over. This routine raises a
+            NormalCurveAfterResolving exception if this condition fails.
+        (b) The Heegaard bouquet must be (topologically) admissible. This
+            routine raises a NotTopologicallyAdmissible exception if this
+            condition fails. More specifically:
+            --> All the Heegaard petals must meet tangentially at the vertex
+                of tri. This routine raises a TransverseHeegaardPetals
+                exception if this particular condition fails.
+            --> The boundary surface of tri must remain connected after
+                cutting along all of the Heegaard petals. This routine raises
+                a DisconnectedComplement exception if this condition fails.
 
         Pre-condition:
         --> e is an edge of self.triangulation().
@@ -914,11 +1162,11 @@ class HeegaardBuilder:
         """
         Yields all reducible edges.
 
-        This routine raises ValueError if this HeegaardBuilder is currently
-        empty.
+        This routine raises an EmptyHeegaardBuilder exception if this
+        HeegaardBuilder is currently empty.
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         for e in self._tri.boundaryComponent(0).edges():
             if self.isReducible(e):
                 yield e
@@ -929,13 +1177,14 @@ class HeegaardBuilder:
 
         This routine chooses reducible edges arbitrarily.
 
-        This routine raises ValueError if:
-        --> this HeegaardBuilder is currently empty; or
-        --> while flipping edges, we reach a situation where there are no
-            reducible edges.
+        This routine might raise the following exceptions:
+        --> EmptyHeegaardBuilder, if this HeegaardBuilder is currently
+            empty
+        --> NoReducibleEdge, if this HeegaardBuilder reaches a situation
+            where it cannot flip an edge because there are no reducible edges
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         while self.countResolved() < self._genus:
             reduced = False
             for e in self.reducibleEdges():
@@ -951,8 +1200,7 @@ class HeegaardBuilder:
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
-                raise ValueError( "Could not find a reducible edge, " +
-                        "which means there must be a normal curve." )
+                raise NoReducibleEdge()
 
     def resolveGreedily(self):
         """
@@ -962,13 +1210,14 @@ class HeegaardBuilder:
         chooses the edge to flip: it always chooses an edge that reduces the
         total edge weight as much as possible.
 
-        This routine raises ValueError if:
-        --> this HeegaardBuilder is currently empty; or
-        --> while flipping edges, we reach a situation where there are no
-            reducible edges.
+        This routine might raise the following exceptions:
+        --> EmptyHeegaardBuilder, if this HeegaardBuilder is currently
+            empty
+        --> NoReducibleEdge, if this HeegaardBuilder reaches a situation
+            where it cannot flip an edge because there are no reducible edges
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         while self.countResolved() < self._genus:
             e = None
             reduction = 0
@@ -982,8 +1231,7 @@ class HeegaardBuilder:
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
-                raise ValueError( "Could not find a reducible edge, " +
-                        "which means there must be a normal curve." )
+                raise NoReducibleEdge()
             # If flipping the edge e would leave behind only resolved
             # petals, then flipEdge() will check that:
             # - there are no normal arcs; and
@@ -1008,13 +1256,14 @@ class HeegaardBuilder:
         routine stops flipping edges, and instead returns a list containing
         all of the reducible edges that could have been flipped.
 
-        This routine raises ValueError if:
-        --> this HeegaardBuilder is currently empty; or
-        --> while flipping edges, we reach a situation where there are no
-            reducible edges.
+        This routine might raise the following exceptions:
+        --> EmptyHeegaardBuilder, if this HeegaardBuilder is currently
+            empty
+        --> NoReducibleEdge, if this HeegaardBuilder reaches a situation
+            where it cannot flip an edge because there are no reducible edges
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         while self.countResolved() < self._genus:
             reduction = 0 # Only used if greedy is True.
             redEdges = []
@@ -1042,8 +1291,7 @@ class HeegaardBuilder:
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
-                raise ValueError( "Could not find a reducible edge, " +
-                        "which means there must be a normal curve." )
+                raise NoReducibleEdge()
 
         # If we exit the above loop, then we successfully resolved all petals
         # without needing to make an arbitrary choice.
@@ -1062,17 +1310,18 @@ class HeegaardBuilder:
 
         This routine never modifies this instance of HeegaardBuilder.
 
-        This routine raises ValueError if:
-        --> this HeegaardBuilder is currently empty; or
-        --> while flipping edges, we reach a situation where there are no
-            reducible edges.
+        This routine might raise the following exceptions:
+        --> EmptyHeegaardBuilder, if this HeegaardBuilder is currently
+            empty
+        --> NoReducibleEdge, if this HeegaardBuilder reaches a situation
+            where it cannot flip an edge because there are no reducible edges
 
         Warning:
         --> In total, this routine could yield an enormous number of
             instances of HeegaardBuilder, even if greedy is set to True.
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         hb = HeegaardBuilder()
         hb.setClone(self)
         redEdges = hb.resolveUntilChoice(greedy)
@@ -1100,7 +1349,7 @@ class HeegaardBuilder:
         e does not satisfy this requirement.
 
         This routine assumes that all edge weights are 0; if this condition
-        fails, then this routine will erase all non-zero edge weights. This
+        fails, then this routine will erase all nonzero edge weights. This
         routine also assumes that none of the four boundary edges opposite e
         form resolved petals (however, e itself may form a resolved petal).
 
@@ -1250,11 +1499,11 @@ class HeegaardBuilder:
         handlebody). Otherwise, this routine returns False and leaves
         self.triangulation() unchanged.
 
-        This routine raises ValueError if this HeegaardBuilder is currently
-        empty.
+        This routine raises an EmptyHeegaardBuilder exception if this
+        HeegaardBuilder is currently empty.
         """
         if self.isEmpty():
-            raise ValueError( "Empty HeegaardBuilder." )
+            raise EmptyHeegaardBuilder()
         if self.countResolved() != self._genus:
             return False
 
