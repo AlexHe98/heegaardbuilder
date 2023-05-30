@@ -45,8 +45,8 @@ def combinations( n, k ):
             return
 
 
-#TODO Generalise the definition of spine layerings so that we can continue
-#   extending beyond minimal layered handlebodies.
+#TODO Add functionality to extend beyond minimal complete spine layerings
+#   (which we need to extend beyond minimal layered handlebodies).
 class SpineLayering:
     #TODO More detailed class notes. In particular, should define precisely
     #   what constitutes an "extension" of a spine layering.
@@ -56,7 +56,7 @@ class SpineLayering:
     """
     def __init__( self, spineFaces,
             _spine=None, _layeredTetInds=None, _bdryFaceInds=None,
-            _tetIncidences=None, _exposedEdges=None, _exposedKeys=None ):
+            _tetIncidences=None, _unlayeredEdges=None, _ungluedEdges=None ):
         """
         Initialises a trivial (zero-tetrahedron) layering onto the spine
         formed by the given triangular faces.
@@ -72,9 +72,9 @@ class SpineLayering:
 
         Internal-use parameters:
             The parameters _spine, _layeredTetInds, _bdryFaceInds,
-            _tetIncidences, _exposedEdges and _exposedKeys are for internal
-            use only. End-users should never change these parameters from
-            their default values.
+            _tetIncidences, _unlayeredEdges and _ungluedEdges are for
+            internal use only. End-users should never change these parameters
+            from their default values.
         """
         self._spineFaces = list(spineFaces)
         self._spineSize = len(spineFaces)
@@ -86,8 +86,8 @@ class SpineLayering:
             self._layeredTetInds = []
             self._bdryFaceInds = dict()
             self._tetIncidences = dict()
-            self._exposedEdges = dict()
-            self._exposedKeys = dict()
+            self._unlayeredEdges = dict()
+            self._ungluedEdges = dict()
             for i in range( self._spineSize ):
                 ###
                 # self._bdryFaceInds: For each boundary face f, maps the
@@ -109,13 +109,12 @@ class SpineLayering:
                         self._tetIncidences[tetInd].add(incidence)
                     else:
                         self._tetIncidences[tetInd] = {incidence}
-                # self._exposedEdges and self._exposedKeys: These mappings
-                #   track how edges of the underlying spine are left
-                #   "exposed" in the boundary of this spine layering.
+                # self._unlayeredEdges and self._ungluedEdges: These mappings
+                #   keep track of which edges are available for layering.
                 for edgeNum in range(3):
-                    key = ( faceInd, edgeNum )
-                    self._exposedEdges[key] = ( i, Perm4() )
-                    self._exposedKeys[ ( i, edgeNum ) ] = {key}
+                    unlayered = ( faceInd, edgeNum )
+                    self._unlayeredEdges[unlayered] = ( i, Perm4() )
+                    self._ungluedEdges[ ( i, edgeNum ) ] = {unlayered}
                 ###
         else:
             # Internal use: Set a non-trivial spine when constructing
@@ -124,8 +123,8 @@ class SpineLayering:
             self._layeredTetInds = _layeredTetInds
             self._bdryFaceInds = _bdryFaceInds
             self._tetIncidences = _tetIncidences
-            self._exposedEdges = _exposedEdges
-            self._exposedKeys = _exposedKeys
+            self._unlayeredEdges = _unlayeredEdges
+            self._ungluedEdges = _ungluedEdges
 
     def triangulation(self):
         """
@@ -216,39 +215,40 @@ class SpineLayering:
         """
         return self._spine
 
-    def isMaximal(self):
+    def isComplete(self):
         """
-        Is this spine layering maximal?
+        Is this spine layering complete?
 
-        This routine returns True if and only if there is no way to extend
-        this spine layering.
+        In detail, we consider this spine layering to be complete if the
+        2-manifold triangulation corresponding to the underlying spine has at
+        most one unglued edge. This routine returns True if and only if this
+        property is satisfied.
         """
-        #TODO Generalise the definition of spine layerings so that we can
-        #   continue extending beyond minimal layered handlebodies.
-        return ( len( self._exposedKeys ) < 2 )
+        return ( len( self._ungluedEdges ) < 2 )
 
-    def _extensionsByPair( self, tetInd, tet, faceInd, embInd, pair ):
+    def _extensionsByPair( self, tetInd, faceInd, embInd, pair ):
         # Extract data about the pair of faces on which we would like to
         # extend this spine layering.
+        tet = self._tri.tetrahedron(tetInd)
         ver = []
         for i in range(2):
             face = self._tri.triangle( faceInd[ pair[i] ] )
             emb = face.embedding( embInd[ pair[i] ] )
             ver.append( emb.vertices() )
         edgeNum = []
-        key = []
+        unlayered = []
         for i in range(2):
             edgeNum.append( ver[i].inverse()[ ver[1-i][3] ] )
-            key.append( ( faceInd[ pair[i] ], edgeNum[i] ) )
+            unlayered.append( ( faceInd[ pair[i] ], edgeNum[i] ) )
 
         # We can extend this spine layering if the given pair of incidences
-        # "witnesses" a gluing between two exposed edges.
+        # "witnesses" a gluing between two unglued edges in the spine.
         witnessedFaceInd = []
         witnessedPerm = []
         witnessedEdgeNum = []
         for i in range(2):
-            if key[i] in self._exposedEdges:
-                wFace, wPerm = self._exposedEdges[ key[i] ]
+            if unlayered[i] in self._unlayeredEdges:
+                wFace, wPerm = self._unlayeredEdges[ unlayered[i] ]
                 witnessedFaceInd.append(wFace)
                 witnessedPerm.append(wPerm)
                 witnessedEdgeNum.append( wPerm[ edgeNum[i] ] )
@@ -272,10 +272,10 @@ class SpineLayering:
                 # incidences later on.
                 continue
             tetIncidences[t] = set( self._tetIncidences[t] )
-        exposedEdges = dict( self._exposedEdges )
-        exposedKeys = dict()
-        for ek in self._exposedKeys:
-            exposedKeys[ek] = set( self._exposedKeys[ek] )
+        unlayeredEdges = dict( self._unlayeredEdges )
+        ungluedEdges = dict()
+        for ek in self._ungluedEdges:
+            ungluedEdges[ek] = set( self._ungluedEdges[ek] )
 
         # Compute extended spine: Perform the gluing that is witnessed by the
         #   new layered tetrahedron.
@@ -324,10 +324,21 @@ class SpineLayering:
                     oppEmb = bf.embedding(oppEmbInd)
                     oppTet = oppEmb.tetrahedron()
                     oppFaceNum = oppEmb.face()
-                    if oppTet != tet or oppFaceNum != faceNum:
+                    if oppTet != tet:
+                        # We have a new incidence to the oppTet.
                         oppTetInd.append( oppTet.index() )
                         oppIncidence.append( ( bfInd, oppEmbInd ) )
                         break
+                    else:
+                        # Note that if oppFaceNum == faceNum, then we are
+                        # looking at the wrong embedding of bf, so we should
+                        # move on to the next embedding.
+                        if oppFaceNum != faceNum:
+                            # A gluing between two faces of tet contributes
+                            # no incidence.
+                            oppTetInd.append(None)
+                            oppIncidence.append(None)
+                            break
         for i in range(2):
             # Remove (one copy of) faceInd[ pair[i] ] from bdryFaceInds.
             f = faceInd[ pair[i] ]
@@ -335,76 +346,72 @@ class SpineLayering:
             if bdryFaceInds[f] == 0:
                 bdryFaceInds.pop(f)
 
-        # Compute extended tetIncidences: Remove all incidences to the new
-        #   layered tetrahedron, and add incidences given by the two new
+        # Compute extended tetIncidences: Add incidences given by the two new
         #   boundary faces.
         # Note that we do not need to remove incidences to the new layered
         # tetrahedron, because we already handled this when we initialised
-        # the copied tetIncidences.
+        # tetIncidences, oppTetInd and oppIncidence.
         for i in range(2):
-            if ( ( oppTetInd[i] is None ) or
-                    ( oppTetInd[i] == tetInd ) ):
+            if oppTetInd[i] is None:
                 continue
             elif oppTetInd[i] in tetIncidences:
                 tetIncidences[ oppTetInd[i] ].add( oppIncidence[i] )
             else:
                 tetIncidences[ oppTetInd[i] ] = { oppIncidence[i] }
 
-        #TODO Test.
-        #print(exposedEdges)
-        #print(exposedKeys)
-        #print()
-        #TODO Fix.
-        # Compute extended exposedEdges and exposedKeys: Remove any exposed
-        #   edge data associated to the edge on which we layered, and add
-        #   exposed edge data for the new boundary faces.
+        # Compute extended unlayeredEdges and ungluedEdges: Completely remove
+        #   unlayered edge data associated to the edge on which we just
+        #   layered, and replace any other unlayered edge data associated to
+        #   the layered faces with unlayered edge data associated to the new
+        #   boundary faces.
+        layeredSet = set()
         for i in range(2):
-            layeredEdge = ( witnessedFaceInd[i], witnessedEdgeNum[i] )
-
-            # Remove exposed edge data associated to layeredEdge.
-            for layeredKey in self._exposedKeys[layeredEdge]:
-                exposedEdges.pop(layeredKey)
-            exposedKeys.pop(layeredEdge)
+            # Remove unlayered edge data associated to the edge on which we
+            # just layered.
+            glued = ( witnessedFaceInd[i], witnessedEdgeNum[i] )
+            ungluedEdges.pop(glued)
+            for layered in self._ungluedEdges[glued]:
+                layeredSet.add(layered)
+        for layered in layeredSet:
+            unlayeredEdges.pop(layered)
         for faceNum in otherFaceNums:
             newFaceInd = tet.triangle(faceNum).index()
             fMap = tet.triangleMapping(faceNum)
             for i in range(2):
-                newEdgeNum = fMap.inverse()[ ver[i][3] ]
-
-                # Is there any exposed edge data to update?
-                oldFaceInd = tet.triangle( ver[i][3] ).index()
+                # If there is old unlayered edge data, then we need to
+                # replace it with new data.
+                oldFaceInd = faceInd[ pair[i] ]
                 oldEdgeNum = ver[i].inverse()[faceNum]
-                oldKey = ( oldFaceInd, oldEdgeNum )
-                if oldKey not in exposedEdges:
-                    # No, there isn't any exposed edge data to update.
+                oldUnlayered = ( oldFaceInd, oldEdgeNum )
+                if oldUnlayered not in unlayeredEdges:
+                    # There is no old data to update.
                     continue
 
-                # Yes, there is exposed edge data to update.
-                newKey = ( newFaceInd, newEdgeNum )
-                exposedInd, oldPerm = self._exposedEdges[oldKey]
+                # There is old data that we need to update.
+                newEdgeNum = fMap.inverse()[ ver[i][3] ]
+                newUnlayered = ( newFaceInd, newEdgeNum )
+                spineInd, oldPerm = unlayeredEdges[oldUnlayered]
                 newPerm = ( oldPerm *
                         ver[i].inverse() *
                         Perm4( ver[i][3], faceNum ) *
                         fMap )
-                if oldFaceInd not in bdryFaceInds:
-                    #TODO Check.
-                    exposedEdges.pop(oldKey)
-                exposedEdges[newKey] = ( exposedInd, newPerm )
-                exposedEdgeNum = oldPerm[oldEdgeNum]
-                #TODO Test.
-                #print( ( exposedInd, exposedEdgeNum ), oldKey, newKey )
-                #print()
-                #TODO
-                exposedKeySet = exposedKeys[
-                        ( exposedInd, exposedEdgeNum ) ]
-                if self._spineFaces[exposedInd].index() not in bdryFaceInds:
-                    exposedKeySet.discard(oldKey)
-                exposedKeySet.add(newKey)
+                ungluedEdgeNum = oldPerm[oldEdgeNum]
+                unlayeredSet = ungluedEdges[ ( spineInd, ungluedEdgeNum ) ]
+
+                # Remove old data.
+                s = self._spineFaces[spineInd].index()
+                if ( s != oldFaceInd ) or ( s not in bdryFaceInds ):
+                    unlayeredEdges.pop(oldUnlayered)
+                    unlayeredSet.remove(oldUnlayered)
+
+                # Add new data.
+                unlayeredEdges[newUnlayered] = ( spineInd, newPerm )
+                unlayeredSet.add(newUnlayered)
 
         # Yield extended spine layering.
         yield SpineLayering( self._spineFaces,
                 spine, layeredTetInds, bdryFaceInds, tetIncidences,
-                exposedEdges, exposedKeys )
+                unlayeredEdges, ungluedEdges )
 
     def _extensionsByTetInd( self, tetInd ):
         # We need two or more incidences to be able to extend.
@@ -412,7 +419,6 @@ class SpineLayering:
         count = len(incidences)
         if count < 2:
             return
-        tet = self._tri.tetrahedron(tetInd)
 
         # Extract indices for the faces and embeddings.
         faceInd = []
@@ -424,7 +430,7 @@ class SpineLayering:
         # Each pair of incidences potentially gives a way to extend.
         for pair in combinations( count, 2 ):
             for extension in self._extensionsByPair(
-                    tetInd, tet, faceInd, embInd, pair ):
+                    tetInd, faceInd, embInd, pair ):
                 yield extension
 
     def extensionsByOne(self):
@@ -432,7 +438,8 @@ class SpineLayering:
         Yields all spine layerings that can be constructed by extending this
         spine layering by one tetrahedron.
         """
-        if self.isMaximal():
+        #TODO Allow extensions beyond minimal complete layerings.
+        if self.isComplete():
             return
 
         # For each tetrahedron that is incident to this spine layering, check
@@ -441,16 +448,16 @@ class SpineLayering:
             for extension in self._extensionsByTetInd(tetInd):
                 yield extension
 
-    def extensions(self):
+    def minimalCompleteExtensions(self):
         """
-        Yields all maximal spine layerings that can be constructed by
-        extending this spine layering.
+        Yields all minimal complete spine layerings that can be constructed
+        by extending this spine layering.
         """
-        if self.isMaximal():
+        if self.isComplete():
             yield self
         else:
             for extensionByOne in self.extensionsByOne():
-                for extension in extensionByOne.extensions():
+                for extension in extensionByOne.minimalCompleteExtensions():
                     yield extension
 
 
@@ -479,7 +486,7 @@ if __name__ == "__main__":
             spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
             layering = SpineLayering(spineFaces)
             found = False
-            for extension in layering.extensions():
+            for extension in layering.minimalCompleteExtensions():
                 found = True
                 layeringCount += 1
                 layeredTetInds = []
@@ -487,8 +494,6 @@ if __name__ == "__main__":
                     layeredTetInds.append(
                             extension.layeredTetrahedron(i).index() )
                 print( spineFaceInds, layeredTetInds )
-                #TODO Test.
-                #print( extension.spineTriangulation().detail() )
             if found:
                 spineCount += 1
                 print()
