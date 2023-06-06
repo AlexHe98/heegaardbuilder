@@ -232,7 +232,7 @@ if __name__ == "__main__":
     print( "PASSED." )
     print()
 
-    # Cases that should succeed.
+    # Genus 2 cases that should succeed.
     print( "============================================================" )
     print( " Genus 2: Cases that should succeed" )
     print( "------------------------------------------------------------" )
@@ -264,7 +264,6 @@ if __name__ == "__main__":
             raise RuntimeError( "Non-orientable after filling." )
         print( "        {}: {}; {}.".format(
             "Original", tri.size(), tri.isoSig() ) )
-        origSig = tri.isoSig()
         tri.intelligentSimplify()
         tri.intelligentSimplify()
         print( "        {}: {}; {}.".format(
@@ -290,7 +289,6 @@ if __name__ == "__main__":
             raise RuntimeError( "Non-orientable after filling." )
         print( "        {}: {}; {}.".format(
             "Original", tri.size(), tri.isoSig() ) )
-        origSig = tri.isoSig()
         tri.intelligentSimplify()
         tri.intelligentSimplify()
         print( "        {}: {}; {}.".format(
@@ -395,7 +393,6 @@ if __name__ == "__main__":
         raise RuntimeError( "Non-orientable after filling." )
     print( "        {}: {}; {}.".format(
         "Original", tri.size(), tri.isoSig() ) )
-    origSig = tri.isoSig()
     tri.intelligentSimplify()
     tri.intelligentSimplify()
     print( "        {}: {}; {}.".format(
@@ -419,7 +416,6 @@ if __name__ == "__main__":
         raise RuntimeError( "Non-orientable after filling." )
     print( "        {}: {}; {}.".format(
         "Original", tri.size(), tri.isoSig() ) )
-    origSig = tri.isoSig()
     tri.intelligentSimplify()
     tri.intelligentSimplify()
     print( "        {}: {}; {}.".format(
