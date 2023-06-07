@@ -399,21 +399,29 @@ class SpineLayering:
             ungluedEdges.pop(glued)
             for layered in self._ungluedEdges[glued]:
                 layeredSet.add(layered)
-        #TODO Test.
+        #TODO Test below.
         sfi = [ sf.index() for sf in self._spineFaces ]
-#        if sfi == [3,4,5,6,8]:
-#            print()
-#            print( "unlayeredEdges\n{}".format(unlayeredEdges) )
-#            print( "======================================================" )
-#            print( "ungluedEdges: {}\n{}".format(
-#                len(ungluedEdges), ungluedEdges ) )
-#            print( "======================================================" )
-#            print( "layeredSet\n{}".format(layeredSet) )
-#            print( "======================================================" )
-#            print( "layeredTetInds\n{}".format(layeredTetInds) )
-#            print()
+        if sfi == [1,3,5,6,8]:
+            print()
+            print( "unlayeredEdges: len={}".format( len(unlayeredEdges) ) )
+            for testUnlayered in unlayeredEdges:
+                testInd, testPerm = unlayeredEdges[testUnlayered]
+                print( "    {} | {} | {}".format(
+                    testUnlayered,
+                    ( testInd, testPerm[ testUnlayered[i] ] ),
+                    testPerm ) )
+            print( "======================================================" )
+            print( "ungluedEdges: len={}".format( len(ungluedEdges) ) )
+            for testUnglued in ungluedEdges:
+                print( "    {} | {}".format(
+                    testUnglued, ungluedEdges[testUnglued] ) )
+            print( "======================================================" )
+            print( "layeredSet\n{}".format(layeredSet) )
+            print( "======================================================" )
+            print( "layeredTetInds\n{}".format(layeredTetInds) )
+            print()
         for layered in layeredSet:
-            #TODO Test.
+            #TODO Test below.
             try:
                 unlayeredEdges.pop(layered)
             except KeyError as e:
@@ -526,13 +534,13 @@ def spineLayerings( tri, k ):
 if __name__ == "__main__":
     #TODO Test below.
     testData = [
-            ( "eHuGabdes", 2 ),
-            ( "eHbecadjk", 2 ),
-            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
-            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
-            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
-            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
-            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
+#            ( "eHuGabdes", 2 ),
+#            ( "eHbecadjk", 2 ),
+#            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
+#            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
+#            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
+#            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
+#            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
             ( "hHbLbqiabegeti", 3 ) ]
     #TODO Test above.
     for sig, genus in testData:
