@@ -364,6 +364,7 @@ class SpineLayering:
         #   layered, and replace any other unlayered edge data associated to
         #   the layered faces with unlayered edge data associated to the new
         #   boundary faces.
+        #TODO Fix!
         layeredSet = set()
         for i in range(2):
             # Remove unlayered edge data associated to the edge on which we
@@ -374,6 +375,7 @@ class SpineLayering:
                 layeredSet.add(layered)
         for layered in layeredSet:
             unlayeredEdges.pop(layered)
+        #TODO Fix!
         for faceNum in otherFaceNums:
             newFaceInd = tet.triangle(faceNum).index()
             fMap = tet.triangleMapping(faceNum)
@@ -461,19 +463,33 @@ class SpineLayering:
                     yield extension
 
 
+def spineLayerings( tri, k ):
+    """
+    Yields all minimal complete spine layerings with k spine faces in the
+    given triangulation.
+    """
+    for spineFaceInds in combinations( tri.countTriangles(), k ):
+        spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
+        layering = SpineLayering(spineFaces)
+        for extension in layering.minimalCompleteExtensions():
+            yield extension
+
+
 # Test code.
 if __name__ == "__main__":
-    testSigs = [
-            "eHuGabdes",
-            "eHbecadjk",
-            "iLLLPQcbddegfhghabfsccswr",
-            "lLLLLPPQcadegigiihjkkjaxreousjnck",
-            "mLvLLMQQPaefhikighkjlljxfrtaangkjdj",
-            "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj" ]
-    for sig in testSigs:
+    testData = [
+            ( "eHuGabdes", 2 ),
+            ( "eHbecadjk", 2 ),
+            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
+            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
+            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
+            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
+            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
+            ( "hHbLbqiabegeti", 3 ) ]
+    for sig, genus in testData:
         print()
         print( "==================================================" )
-        print(sig)
+        print( "Genus {}, {}".format( genus, sig ) )
         print( "--------------------------------------------------" )
         print()
         tri = Triangulation3.fromIsoSig(sig)
@@ -482,20 +498,21 @@ if __name__ == "__main__":
         triangles = tri.countTriangles()
         spineCount = 0
         layeringCount = 0
-        for spineFaceInds in combinations( tri.countTriangles(), 3 ):
+        for spineFaceInds in combinations(
+                tri.countTriangles(), 2*genus-1 ):
             spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
             layering = SpineLayering(spineFaces)
-            found = False
+            subCount = 0
             for extension in layering.minimalCompleteExtensions():
-                found = True
+                if subCount == 0:
+                    print( " Spine faces: {}".format(spineFaceInds) )
+                    print( "One layering: {}".format(
+                        extension._layeredTetInds ) )
+                subCount += 1
                 layeringCount += 1
-                layeredTetInds = []
-                for i in range( extension.size() ):
-                    layeredTetInds.append(
-                            extension.layeredTetrahedron(i).index() )
-                print( spineFaceInds, layeredTetInds )
-            if found:
+            if subCount > 0:
                 spineCount += 1
+                print( "  #layerings: {}".format(subCount) )
                 print()
         print()
         print( "Triangles: {}. Spines: {}. Layerings: {}.".format(
