@@ -1,6 +1,7 @@
 """
 Find g-spines in a triangulation.
 """
+from sys import stdout
 from regina import *
 
 
@@ -492,6 +493,7 @@ if __name__ == "__main__":
         print( "Genus {}, {}".format( genus, sig ) )
         print( "--------------------------------------------------" )
         print()
+        stdout.flush()
         tri = Triangulation3.fromIsoSig(sig)
 
         # Test searching for g-spines.
@@ -514,6 +516,7 @@ if __name__ == "__main__":
                 spineCount += 1
                 print( "  #layerings: {}".format(subCount) )
                 print()
+                stdout.flush()
         print()
         print( "Triangles: {}. Spines: {}. Layerings: {}.".format(
             triangles, spineCount, layeringCount ) )
