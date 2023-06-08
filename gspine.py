@@ -476,6 +476,10 @@ class SpineLayering:
         count = len(incidences)
         if count < 2:
             return
+        #TODO Test below.
+        if count > 2:
+            print( "    {}".format(count) )
+        #TODO Test above.
 
         # Extract indices for the faces and embeddings.
         faceInd = []
@@ -534,14 +538,15 @@ def spineLayerings( tri, k ):
 if __name__ == "__main__":
     #TODO Test below.
     testData = [
-#            ( "eHuGabdes", 2 ),
-#            ( "eHbecadjk", 2 ),
-#            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
-#            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
-#            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
-#            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
-#            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
-            ( "hHbLbqiabegeti", 3 ) ]
+            ( "eHuGabdes", 2 ),
+            ( "eHbecadjk", 2 ),
+            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
+            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
+            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
+            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
+            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 )]
+            #( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
+            #( "hHbLbqiabegeti", 3 ) ]
     #TODO Test above.
     for sig, genus in testData:
         print()
