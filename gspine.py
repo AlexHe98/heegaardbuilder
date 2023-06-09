@@ -112,11 +112,13 @@ class SpineLayering:
                         self._tetIncidences[tetInd] = {incidence}
                 # self._unlayeredEdges and self._ungluedEdges: These mappings
                 #   keep track of which edges are available for layering.
-                for edgeNum in range(3):
-                    unlayered = ( faceInd, edgeNum )
-                    self._unlayeredEdges[unlayered] = ( i, Perm4() )
-                    self._ungluedEdges[ ( i, edgeNum ) ] = {unlayered}
-                ###
+                for direction in range(2):
+                    for edgeNum in range(3):
+                        unlayered = ( faceInd, direction, edgeNum )
+                        self._unlayeredEdges[unlayered] = (
+                                i, direction, Perm4() )
+                        unglued = ( i, direction, edgeNum )
+                        self._ungluedEdges[unglued] = unlayered
         else:
             # Internal use: Set a non-trivial spine when constructing
             #   extensions.
@@ -240,7 +242,8 @@ class SpineLayering:
         unlayered = []
         for i in range(2):
             edgeNum.append( ver[i].inverse()[ ver[1-i][3] ] )
-            unlayered.append( ( faceInd[ pair[i] ], edgeNum[i] ) )
+            unlayered.append( (
+                faceInd[ pair[i] ], embInd[ pair[i] ], edgeNum[i] ) )
 
         # We can extend this spine layering if the given pair of incidences
         # "witnesses" a gluing between two unglued edges in the spine.
@@ -249,7 +252,7 @@ class SpineLayering:
         witnessedEdgeNum = []
         for i in range(2):
             if unlayered[i] in self._unlayeredEdges:
-                wFace, wPerm = self._unlayeredEdges[ unlayered[i] ]
+                wFace, _, wPerm = self._unlayeredEdges[ unlayered[i] ]
                 witnessedFaceInd.append(wFace)
                 witnessedPerm.append(wPerm)
                 witnessedEdgeNum.append( wPerm[ edgeNum[i] ] )
@@ -274,9 +277,7 @@ class SpineLayering:
                 continue
             tetIncidences[t] = set( self._tetIncidences[t] )
         unlayeredEdges = dict( self._unlayeredEdges )
-        ungluedEdges = dict()
-        for ek in self._ungluedEdges:
-            ungluedEdges[ek] = set( self._ungluedEdges[ek] )
+        ungluedEdges = dict( self._ungluedEdges )
 
         # Compute extended spine: Perform the gluing that is witnessed by the
         #   new layered tetrahedron.
@@ -291,15 +292,6 @@ class SpineLayering:
                 witnessedPerm[0].inverse() )
         myFace.join( myEdge, yourFace, gluing )
 
-        #TODO Test below.
-#        if tetInd in layeredTetInds:
-#            print()
-#            print("+---------+")
-#            print("| REPEAT! |")
-#            print("+---------+")
-#            print( tetInd, layeredTetInds )
-#            print()
-        #TODO Test above.
         # Compute extended layeredTetInds: Append the index of the new
         #   layered tetrahedron.
         layeredTetInds.append(tetInd)
@@ -308,9 +300,13 @@ class SpineLayering:
         #   layered, and add the two new boundary faces given by the new
         #   layered tetrahedron.
         # We also take this opportunity to collect some data that is
-        # necessary for extending tetIncidences.
-        oppTetInd = []          # Needed for tetIncidences.
-        oppIncidence = []       # Needed for tetIncidences.
+        # necessary for extending:
+        #   --> tetIncidences
+        #   --> unlayeredEdges
+        #   --> ungluedEdges
+        oppTetInd = []          # For tetIncidences.
+        oppIncidence = []       # For tetIncidences.
+        oppDirection = dict()   # For unlayeredEdges and ungluedEdges.
         layerFaceNums = { ver[0][3], ver[1][3] }
         otherFaceNums = {0,1,2,3} - layerFaceNums
         for faceNum in otherFaceNums:
@@ -323,48 +319,37 @@ class SpineLayering:
             else:
                 bdryFaceInds[bfInd] = 1
 
-            # In order to extend tetIncidences, we need to populate oppTetInd
-            # and oppIncidence.
+            # Populate oppTetInd, oppIncidence and oppDirection.
             if bf.isBoundary():
                 # Boundary face contributes no incidence.
                 oppTetInd.append(None)
                 oppIncidence.append(None)
+                oppDirection[faceNum] = 1
             else:
+                # For an internal face, find the embedding that is opposite
+                # the new layered tetrahedron.
                 for oppEmbInd in range(2):
                     oppEmb = bf.embedding(oppEmbInd)
                     oppTet = oppEmb.tetrahedron()
                     oppFaceNum = oppEmb.face()
-                    #TODO Fix below.
-                    if oppTet.index() in layeredTetInds:
-                        # If oppTet == tet and oppFaceNum == faceNum, then we
-                        # are looking at the wrong embedding of bf, in which
-                        # case we should move on to the next embedding.
-                        # Otherwise, oppTet is already a layered tetrahedron,
-                        # so it doesn't contribute a new incidence.
-                        if oppTet != tet or oppFaceNum != faceNum:
-                            oppTetInd.append(None)
-                            oppIncidence.append(None)
-                            break
+                    if oppTet == tet and oppFaceNum == faceNum:
+                        # This is not the opposite embedding.
+                        continue
+                    elif oppTet.index() in layeredTetInds:
+                        # The opposite tetrahedron is already part of this
+                        # spine layering, so it doesn't contribute a new
+                        # tetrahedron incidence.
+                        oppTetInd.append(None)
+                        oppIncidence.append(None)
+                        oppDirection[faceNum] = oppEmbInd
+                        break
                     else:
-                        # We have a new incidence to the oppTet.
+                        # The opposite tetrahedron contributes a new
+                        # tetrahedron incidence.
                         oppTetInd.append( oppTet.index() )
                         oppIncidence.append( ( bfInd, oppEmbInd ) )
+                        oppDirection[faceNum] = oppEmbInd
                         break
-                    #if oppTet != tet:
-                    #    # We have a new incidence to the oppTet.
-                    #    oppTetInd.append( oppTet.index() )
-                    #    oppIncidence.append( ( bfInd, oppEmbInd ) )
-                    #    break
-                    #else:
-                    #    # Note that if oppFaceNum == faceNum, then we are
-                    #    # looking at the wrong embedding of bf, so we should
-                    #    # move on to the next embedding.
-                    #    if oppFaceNum != faceNum:
-                    #        # A gluing between two faces of tet contributes
-                    #        # no incidence.
-                    #        oppTetInd.append(None)
-                    #        oppIncidence.append(None)
-                    #        break
         for i in range(2):
             # Remove (one copy of) faceInd[ pair[i] ] from bdryFaceInds.
             f = faceInd[ pair[i] ]
@@ -390,80 +375,46 @@ class SpineLayering:
         #   layered, and replace any other unlayered edge data associated to
         #   the layered faces with unlayered edge data associated to the new
         #   boundary faces.
-        #TODO Fix below!
-        layeredSet = set()
         for i in range(2):
-            # Remove unlayered edge data associated to the edge on which we
-            # just layered.
-            glued = ( witnessedFaceInd[i], witnessedEdgeNum[i] )
-            ungluedEdges.pop(glued)
-            for layered in self._ungluedEdges[glued]:
-                layeredSet.add(layered)
-        #TODO Test below.
-        sfi = [ sf.index() for sf in self._spineFaces ]
-        if sfi == [1,3,5,6,8]:
-            print()
-            print( "unlayeredEdges: len={}".format( len(unlayeredEdges) ) )
-            for testUnlayered in unlayeredEdges:
-                testInd, testPerm = unlayeredEdges[testUnlayered]
-                print( "    {} | {} | {}".format(
-                    testUnlayered,
-                    ( testInd, testPerm[ testUnlayered[i] ] ),
-                    testPerm ) )
-            print( "======================================================" )
-            print( "ungluedEdges: len={}".format( len(ungluedEdges) ) )
-            for testUnglued in ungluedEdges:
-                print( "    {} | {}".format(
-                    testUnglued, ungluedEdges[testUnglued] ) )
-            print( "======================================================" )
-            print( "layeredSet\n{}".format(layeredSet) )
-            print( "======================================================" )
-            print( "layeredTetInds\n{}".format(layeredTetInds) )
-            print()
-        for layered in layeredSet:
-            #TODO Test below.
-            try:
+            for direction in range(2):
+                # Remove unlayered edge data associated to the edge on which
+                # we just layered.
+                glued = ( witnessedFaceInd[i],
+                        direction,
+                        witnessedEdgeNum[i] )
+                layered = ungluedEdges.pop(glued)
                 unlayeredEdges.pop(layered)
-            except KeyError as e:
-                print(sfi)
-                print()
-                stdout.flush()
-                raise e
-            #unlayeredEdges.pop(layered)
-        #TODO Fix above!
         for faceNum in otherFaceNums:
             newFaceInd = tet.triangle(faceNum).index()
+            newDirection = oppDirection[faceNum]
             fMap = tet.triangleMapping(faceNum)
             for i in range(2):
                 # If there is old unlayered edge data, then we need to
                 # replace it with new data.
                 oldFaceInd = faceInd[ pair[i] ]
+                oldDirection = embInd[ pair[i] ]
                 oldEdgeNum = ver[i].inverse()[faceNum]
-                oldUnlayered = ( oldFaceInd, oldEdgeNum )
+                oldUnlayered = ( oldFaceInd, oldDirection, oldEdgeNum )
                 if oldUnlayered not in unlayeredEdges:
                     # There is no old data to update.
                     continue
 
                 # There is old data that we need to update.
+                # First update unlayeredEdges.
                 newEdgeNum = fMap.inverse()[ ver[i][3] ]
-                newUnlayered = ( newFaceInd, newEdgeNum )
-                spineInd, oldPerm = unlayeredEdges[oldUnlayered]
+                newUnlayered = ( newFaceInd, newDirection, newEdgeNum )
+                spineInd, spineDir, oldPerm = unlayeredEdges.pop(
+                        oldUnlayered )
                 newPerm = ( oldPerm *
                         ver[i].inverse() *
                         Perm4( ver[i][3], faceNum ) *
                         fMap )
-                ungluedEdgeNum = oldPerm[oldEdgeNum]
-                unlayeredSet = ungluedEdges[ ( spineInd, ungluedEdgeNum ) ]
+                unlayeredEdges[newUnlayered] = (
+                        spineInd, spineDir, newPerm )
 
-                # Remove old data.
-                s = self._spineFaces[spineInd].index()
-                if ( s != oldFaceInd ) or ( s not in bdryFaceInds ):
-                    unlayeredEdges.pop(oldUnlayered)
-                    unlayeredSet.remove(oldUnlayered)
-
-                # Add new data.
-                unlayeredEdges[newUnlayered] = ( spineInd, newPerm )
-                unlayeredSet.add(newUnlayered)
+                # Now update ungluedEdges.
+                unglued = ( spineInd, spineDir, oldPerm[oldEdgeNum] )
+                ungluedEdges[unglued] = newUnlayered
 
         # Yield extended spine layering.
         yield SpineLayering( self._spineFaces,
@@ -544,9 +495,8 @@ if __name__ == "__main__":
             ( "iLLLPQcbddegfhghabfsccswr", 2 ),
             ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
             ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
-            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 )]
-            #( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
-            #( "hHbLbqiabegeti", 3 ) ]
+            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
+            ( "hHbLbqiabegeti", 3 ) ]
     #TODO Test above.
     for sig, genus in testData:
         print()
