@@ -227,7 +227,7 @@ class SpineLayering:
         most one unglued edge. This routine returns True if and only if this
         property is satisfied.
         """
-        return ( len( self._ungluedEdges ) < 2 )
+        return ( len( self._ungluedEdges ) < 4 )
 
     def _extensionsByPair( self, tetInd, faceInd, embInd, pair ):
         # Extract data about the pair of faces on which we would like to
@@ -427,10 +427,6 @@ class SpineLayering:
         count = len(incidences)
         if count < 2:
             return
-        #TODO Test below.
-        if count > 2:
-            print( "    {}".format(count) )
-        #TODO Test above.
 
         # Extract indices for the faces and embeddings.
         faceInd = []
@@ -487,7 +483,7 @@ def spineLayerings( tri, k ):
 
 # Test code.
 if __name__ == "__main__":
-    #TODO Test below.
+    #TODO More comprehensive tests.
     testData = [
             ( "eHuGabdes", 2 ),
             ( "eHbecadjk", 2 ),
@@ -497,7 +493,6 @@ if __name__ == "__main__":
             ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
             ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
             ( "hHbLbqiabegeti", 3 ) ]
-    #TODO Test above.
     for sig, genus in testData:
         print()
         print( "==================================================" )
