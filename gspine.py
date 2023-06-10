@@ -80,6 +80,7 @@ class SpineLayering:
         self._spineFaces = list(spineFaces)
         self._spineSize = len(spineFaces)
         self._tri = spineFaces[0].triangulation()
+        self._detail = None
         if _spine is None:
             # Set this spine layering to be trivial.
             self._spine = Triangulation2()
@@ -223,11 +224,14 @@ class SpineLayering:
         Is this spine layering complete?
 
         In detail, we consider this spine layering to be complete if the
-        2-manifold triangulation corresponding to the underlying spine has at
-        most one unglued edge. This routine returns True if and only if this
-        property is satisfied.
+        2-manifold triangulation S corresponding to the underlying spine
+        satisfies the following properties:
+        (1) S is connected; and
+        (2) S has at most one unglued edge.
+        This routine returns True if and only if these two properties hold.
         """
-        return ( len( self._ungluedEdges ) < 4 )
+        return ( self._spine.isConnected and
+                len( self._ungluedEdges ) < 4 )
 
     def _extensionsByPair( self, tetInd, faceInd, embInd, pair ):
         # Extract data about the pair of faces on which we would like to
@@ -468,62 +472,59 @@ class SpineLayering:
                 for extension in extensionByOne.minimalCompleteExtensions():
                     yield extension
 
+    def detail(self):
+        """
+        Returns a detailed human-readable description of this spine layering.
+        """
+        #TODO Make the description more detailed.
+        if self._detail is None:
+            spineFaceInds = [ f.index() for f in self._spineFaces ]
+            self._detail = "Layered tetrahedra: {}\n\n".format(
+                    self._layeredTetInds )
+            self._detail += "Spine:\n"
+            self._detail += " Triangle  |  glued to:"
+            self._detail += "     (01)     (02)     (12)\n"
+            self._detail += " ----------+-----------"
+            self._detail += "---------------------------\n"
+            for f in spineFaceInds:
+                self._detail += "      {:>3}  |           ".format(f)
+                myFace = self._spine.triangle( spineFaceInds.index(f) )
+                for e, i, j in ( (2,0,1), (1,0,2), (0,1,2) ):
+                    yourFace = myFace.adjacentTriangle(e)
+                    if yourFace is None:
+                        self._detail += "  unglued"
+                    else:
+                        gluing = myFace.adjacentGluing(e)
+                        self._detail += " {:>3} ({}{})".format(
+                                spineFaceInds[ yourFace.index() ],
+                                gluing[i], gluing[j] )
+                self._detail += "\n"
+            self._detail += "\n"
+        return self._detail
+
+
+def _trivialLayerings( tri, k ):
+    for spineFaceInds in combinations( tri.countTriangles(), k ):
+        spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
+        yield SpineLayering(spineFaces)
+
+
+def spines( tri, k ):
+    """
+    For each spine consisting of k triangles in the given triangulation,
+    yields one possible layering on this spine.
+    """
+    for layering in _trivialLayerings( tri, k ):
+        for extension in layering.minimalCompleteExtensions():
+            yield extension
+            break
+
 
 def spineLayerings( tri, k ):
     """
     Yields all minimal complete spine layerings with k spine faces in the
     given triangulation.
     """
-    for spineFaceInds in combinations( tri.countTriangles(), k ):
-        spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
-        layering = SpineLayering(spineFaces)
+    for layering in _trivialLayerings( tri, k ):
         for extension in layering.minimalCompleteExtensions():
             yield extension
-
-
-# Test code.
-if __name__ == "__main__":
-    #TODO More comprehensive tests.
-    testData = [
-            ( "eHuGabdes", 2 ),
-            ( "eHbecadjk", 2 ),
-            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2 ),
-            ( "iLLLPQcbddegfhghabfsccswr", 2 ),
-            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2 ),
-            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2 ),
-            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2 ),
-            ( "hHbLbqiabegeti", 3 ) ]
-    for sig, genus in testData:
-        print()
-        print( "==================================================" )
-        print( "Genus {}, {}".format( genus, sig ) )
-        print( "--------------------------------------------------" )
-        print()
-        stdout.flush()
-        tri = Triangulation3.fromIsoSig(sig)
-
-        # Test searching for g-spines.
-        triangles = tri.countTriangles()
-        spineCount = 0
-        layeringCount = 0
-        for spineFaceInds in combinations(
-                tri.countTriangles(), 2*genus-1 ):
-            spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
-            layering = SpineLayering(spineFaces)
-            subCount = 0
-            for extension in layering.minimalCompleteExtensions():
-                if subCount == 0:
-                    print( " Spine faces: {}".format(spineFaceInds) )
-                    print( "One layering: {}".format(
-                        extension._layeredTetInds ) )
-                subCount += 1
-                layeringCount += 1
-            if subCount > 0:
-                spineCount += 1
-                print( "  #layerings: {}".format(subCount) )
-                print()
-                stdout.flush()
-        print()
-        print( "Triangles: {}. Spines: {}. Layerings: {}.".format(
-            triangles, spineCount, layeringCount ) )
-        print()

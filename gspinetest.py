@@ -1,69 +1,68 @@
-from heegaardbuilder import *
+"""
+Small test suite for the SpineLayering class.
+"""
+from sys import stdout
+from timeit import default_timer as timer
 from gspine import *
 from regina import *
 
 
-def _testLayering( tri, k ):
-    for spineFaceInds in combinations( tri.countTriangles(), k ):
-        spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
-        layering = SpineLayering(spineFaces)
-        count = 0
-        for extension in layering.minimalCompleteExtensions():
-            if count == 0:
-                print( spineFaceInds, extension._layeredTetInds )
-            count += 1
-        if count > 0:
-            print(count)
-            print()
-
-
-
 if __name__ == "__main__":
-    print()
-    sigGenus2 = "eHbecadjk"
+    testData = [
+            ( "eHuGabdes", 2, "Handlebody" ),
+            ( "eHbecadjk", 2, "Handlebody" ),
+            ( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex", 2,
+                "Handlebody: eHbecadjk plus extra layers" ),
+            ( "iLLLPQcbddegfhghabfsccswr", 2,
+                "Attached handlebody to eHbecadjk" ),
+            ( "lLLLLPPQcadegigiihjkkjaxreousjnck", 2,
+                "Attached handlebody to eHbecadjk" ),
+            ( "mLvLLMQQPaefhikighkjlljxfrtaangkjdj", 2,
+                "Attached handlebody to eHbecadjk" ),
+            ( "oLLvzwQMAQccdhikhghjlklmnnhshsaocnhvvnwlj", 2,
+                "Attached handlebody to eHbecadjk" ),
+            ( "hHbLbqiabegeti", 3, "Handlebody" ) ]
+    msg = "Time: {:.6f} seconds. Spines: {}. Layerings: {}."
+    for sig, genus, description in testData:
+        tri = Triangulation3.fromIsoSig(sig)
+        triangles = tri.countTriangles()
+        print()
+        print( "==========================================================" )
+        print( "Iso sig: {}".format(sig) )
+        print( "#triangles: {}".format(triangles) )
+        print( "Genus {}".format(genus) )
+        print(description)
+        print( "----------------------------------------------------------" )
+        print()
+        stdout.flush()
 
-    # Handlebody.
-    print( "===============" )
-    tri = Triangulation3.fromIsoSig(sigGenus2)
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # After resolving.
-    print( "===============" )
-    w = (0,2,2,4,5,1,2,3,0)
-    hb = HeegaardBuilder()
-    hb.setBouquet( tri, w )
-    hb.resolveGreedily()
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # After filling.
-    print( "===============" )
-    hb.fillHandlebody()
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # Directly from iso sig nHuKfvPQPMabdgikhkkjlmhjfmdscnjex.
-    print( "===============" )
-    tri = Triangulation3.fromIsoSig( "nHuKfvPQPMabdgikhkkjlmhjfmdscnjex" )
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # Directly from iso sig lLLLLPPQcadegigiihjkkjaxreousjnck.
-    print( "===============" )
-    tri = Triangulation3.fromIsoSig( "lLLLLPPQcadegigiihjkkjaxreousjnck" )
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # Another genus 2.
-    print( "===============" )
-    tri = Triangulation3.fromIsoSig( "eHuGabdes" )
-    print( tri.isoSig() )
-    _testLayering( tri, 3 )
-
-    # Genus 3.
-    print( "===============" )
-    sigGenus3 = "hHbLbqiabegeti"
-    tri = Triangulation3.fromIsoSig(sigGenus3)
-    print( tri.isoSig() )
-    _testLayering( tri, 5 )
+        # Test searching for g-spines.
+        spineCount = 0
+        layeringCount = 0
+        start = timer()
+        for spineFaceInds in combinations( triangles, 2*genus-1 ):
+            spineFaces = [ tri.triangle(i) for i in spineFaceInds ]
+            layering = SpineLayering(spineFaces)
+            subCount = 0
+            for extension in layering.minimalCompleteExtensions():
+                if subCount == 0:
+                    detail = extension.detail()
+                subCount += 1
+                layeringCount += 1
+            if subCount > 0:
+                spineCount += 1
+                print( ".................................................." )
+                print( "  Spine faces: {}".format(spineFaceInds) )
+                print( "   #layerings: {}".format(subCount) )
+                print( " -------------" )
+                print( " One layering:" )
+                print()
+                print(detail)
+                stdout.flush()
+        end = timer()
+        print()
+        print( ".................................................." )
+        print()
+        print( msg.format( end - start, spineCount, layeringCount ) )
+        print()
+        stdout.flush()
