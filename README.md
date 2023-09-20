@@ -6,7 +6,7 @@ triangulations from a combinatorial encoding of a Heegaard diagram called
 a Heegaard bouquet.
 
 The algorithm for building such triangulations was designed in joint work
-with James Morgan and Em Thompson. The main implementation for this
+with *James Morgan* and *Em Thompson*. The main implementation for this
 algorithm is contained in the script ``heegaardbuilder.py``. This script
 is designed to be run using Regina's regina-python command-line program in
 interactive mode. For details on how to install Regina, visit:
