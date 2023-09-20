@@ -1,0 +1,88 @@
+Regina 7.2
+Software for low-dimensional topology
+Copyright (c) 1999-2022, The Regina development team
+
+Running script...
+Ready.
+>>> sig = "eHbecadjk"
+>>> tri = Triangulation3(sig)
+>>> weights = (0,2,2,4,5,1,2,3,0)
+>>> # By default, we start with no resolved edges.
+>>> hb = HeegaardBuilder()
+>>> hb.setBouquet( tri, weights )
+>>> hb.fillHandlebody()
+False
+>>> # fillHandlebody() returned False because we need to resolve Heegaard petals.
+>>> hb.resolveAllPetals()
+>>> hb.fillHandlebody()
+True
+>>> # When fillHandlebody() returns True, it means we succeeded.
+>>> tri.isClosed()
+True
+>>> # Notice that tri is now a closed triangulation.
+>>> 
+>>> # There is also a "greedy" option for resolving, which might give a smaller triangulation.
+>>> tri.size()
+14
+>>> tri = Triangulation3(sig)
+>>> hb.setBouquet( tri, weights )
+>>> hb.resolveGreedily()
+>>> hb.fillHandlebody()
+True
+>>> tri.isClosed()
+True
+>>> tri.size()
+11
+>>> 
+>>> # In addition to choosing edge weights, you can also choose some edges to be resolved.
+>>> tri = Triangulation3(sig)
+>>> weights = (0,0,0,2,2,1,2,0,0)
+>>> resolvedEdges = {2}
+>>> # This will set edge number 2 to be resolved.
+>>> hb.setBouquet( tri, weights, resolvedEdges )
+>>> hb.fillHandlebody()
+False
+>>> hb.resolveGreedily()
+>>> hb.fillHandlebody()
+True
+>>> tri.isClosed()
+True
+>>> tri.size()
+8
+>>> 
+>>> tri = Triangulation3(sig)
+>>> weights = (0,0,0,0,0,0,0,0,0)
+>>> resolvedEdges = {1,5}
+>>> # This will set edges 1 and 5 to be resolved.
+>>> hb.setBouquet( tri, weights, resolvedEdges )
+>>> # Since every petal is already resolved, fillHandlebody() will work straight away.
+>>> hb.fillHandlebody()
+True
+>>> tri.isClosed()
+True
+>>> tri.size()
+7
+>>> 
+>>> # Finally, if you give bad inputs to setBouquet(), you will get informative error messages.
+>>> tri = Triangulation3(sig)
+>>> weights = (1,3,2,0,2,3,2,0,2)
+>>> hb.setBouquet( tri, weights )
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "<string>", line 598, in setBouquet
+  File "<string>", line 170, in _computeArcCoords
+ValueError: Edge weights fail to satisfy the matching constraints in triangle 9.
+>>> # Sometimes, the error will only occur after you try to resolve.
+>>> weights = (1,1,2,0,1,1,0,0,0)
+>>> hb.setBouquet( tri, weights )
+>>> hb.resolveGreedily()
+Traceback (most recent call last):
+  File "<console>", line 1, in <module>
+  File "<string>", line 989, in resolveGreedily
+  File "<string>", line 909, in flipEdge
+  File "<string>", line 878, in _flipEdgeImpl
+  File "<string>", line 529, in _setBouquetImpl
+  File "<string>", line 288, in _checkAdmissible
+  File "<string>", line 207, in _checkTangential
+ValueError: Edges 12 and 13 form Heegaard petals that meet transversely.
+
