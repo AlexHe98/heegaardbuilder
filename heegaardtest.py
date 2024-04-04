@@ -30,7 +30,7 @@ if __name__ == "__main__":
             [ (0,0,0,2,2,2,3,1,1), {0,2},
                 "Normal curve", NormalCurveAfterResolving ],
             [ (0,0,0,0,0,0,0,0,0), {0,2},
-                "Transverse Heegaard petals", TransversePetals ] ]
+                "Transverse filling petals", TransversePetals ] ]
     tri = Triangulation3.fromIsoSig(sigGenus2)
     for w, r, name, exception in setError:
         print(name)
