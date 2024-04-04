@@ -1,5 +1,5 @@
 """
-A class for building triangulations from a Heegaard bouquet.
+A class for building triangulations from a filling bouquet.
 """
 from heegaarderror import *
 from regina import *
@@ -117,7 +117,7 @@ def _computeArcCoords( tri, weights ):
     auxiliary information.
 
     The arc coordinates only make sense if the given edge weights satisfy the
-    matching constraints for a Heegaard bouquets. Specifically, the matching
+    matching constraints for a filling bouquets. Specifically, the matching
     constraints require that for each triangular face F in the boundary of
     tri, either:
     (a) one edge of F contributes more than half of the total weight of all
@@ -202,7 +202,7 @@ def _checkTangential( tri, resolved ):
     --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
-    --> The Heegaard bouquet given by the edges in R is combinatorially
+    --> The filling bouquet given by the edges in R is combinatorially
         admissible.
     """
     stack = []
@@ -233,7 +233,7 @@ def _checkComplement( tri, resolved ):
     --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
-    --> The Heegaard bouquet given by the edges in R is combinatorially
+    --> The filling bouquet given by the edges in R is combinatorially
         admissible.
     """
     bc = tri.boundaryComponent(0)
@@ -247,7 +247,7 @@ def _checkComplement( tri, resolved ):
         parent[ind] = ind
         size[ind] = 1
 
-    # For each boundary edge e that does not form a resolved Heegaard
+    # For each boundary edge e that does not form a resolved filling
     # petal, take the union of the two components on either side of e.
     for e in bc.edges():
         if e.index() in resolved:
@@ -286,7 +286,7 @@ def _checkAdmissible( tri, resolved ):
     """
     Letting R denote the collection of boundary edges of tri given by the
     list of resolved edge indices, this routine checks that R describes a
-    (topologically) admissible Heegaard bouquet in the boundary of tri.
+    (topologically) admissible filling bouquet in the boundary of tri.
 
     This routine raises a NotTopologicallyAdmissible exception if this
     condition fails. More specifically:
@@ -301,7 +301,7 @@ def _checkAdmissible( tri, resolved ):
     --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
     --> resolved is formatted correctly, as specified in the documentation
         for the _checkBouquet() routine.
-    --> The Heegaard bouquet given by the edges in R is combinatorially
+    --> The filling bouquet given by the edges in R is combinatorially
         admissible.
     """
     _checkTangential( tri, resolved )
@@ -441,11 +441,11 @@ class HeegaardBuilder:
     Implements the various subroutines needed to execute an algorithm for
     taking an orientable one-vertex triangulation T with a single boundary
     component, and filling with a handlebody according to a system of curves
-    given by a Heegaard bouquet in the boundary of T.
+    given by a filling bouquet in the boundary of T.
 
-    A Heegaard bouquet is a bouquet of circles embedded in the boundary of T
+    A filling bouquet is a bouquet of circles embedded in the boundary of T
     such that the vertex of the bouquet lies on the vertex of T, and each
-    petal p (called a Heegaard petal) is a circle embedded in the boundary of
+    petal p (called a filling petal) is a circle embedded in the boundary of
     T in one of two ways:
     (1) The petal p is resolved, meaning that it coincides with an edge of T.
     (2) The petal p is unresolved, meaning that it is embedded so that:
@@ -455,20 +455,19 @@ class HeegaardBuilder:
             that go from a vertex of F to the interior of the edge opposite
             this vertex.
 
-    We call a Heegaard bouquet "(topologically) admissible" if all of its
+    We call a filling bouquet "(topologically) admissible" if all of its
     petals meet tangentially at the vertex (in other words, the petals can be
     made disjoint after isotoping them away from the vertex), and these
-    petals form a system of Heegaard curves on the boundary of T. For a
-    weaker condition that is much simpler to test, call a Heegaard bouquet
+    petals form a system of attaching circles on the boundary of T. For a
+    weaker condition that is much simpler to test, call a filling bouquet
     "combinatorially admissible" if it has exactly 2*(g - r) root arcs, where
     g is the genus of the boundary surface of T and r is the number of
     resolved petals.
 
     If T is a triangulation of a genus-g handlebody, then T with an
-    admissible Heegaard bouquet describes a genus-g Heegaard splitting of an
+    admissible filling bouquet describes a genus-g Heegaard splitting of an
     orientable closed 3-manifold M, and filling with a handlebody gives a
-    triangulation T' of M in which the Heegaard surface appears as a
-    subcomplex of the 2-skeleton of T'.
+    one-vertex triangulation T' of M.
 
     Moreover, if T is actually a *layered* triangulation of a genus-g
     handlebody (as described in Jaco and Rubinstein's unpublished 2006 paper
@@ -507,9 +506,9 @@ class HeegaardBuilder:
         Warning:
         --> You are allowed to modify the returned triangulation using a
             routine other than one of the routines provided by this
-            HeegaardBuilder, but doing so will invalidate the Heegaard
+            HeegaardBuilder, but doing so will invalidate the filling
             bouquet currently stored by this HeegaardBuilder; as a result,
-            subsequent attempts to work with this Heegaard bouquet will lead
+            subsequent attempts to work with this filling bouquet will lead
             to undefined behaviour.
         """
         return self._tri
@@ -517,7 +516,7 @@ class HeegaardBuilder:
     def _setBouquetImpl( self, tri, weights, resolved, arcCoords,
             arcInfo=None ):
         """
-        Set a Heegaard bouquet in the given triangulation tri with the given
+        Set a filling bouquet in the given triangulation tri with the given
         edge weights, resolved edge indices, and arc coordinates.
 
         The optional arcInfo variable, if provided, should be a 2-tuple
@@ -528,34 +527,34 @@ class HeegaardBuilder:
         there are no root arcs, but there is still at least one normal arc
         (since this would imply that we have a normal curve).
 
-        Moreover, if every Heegaard petal is resolved, then this routine will
-        raise a NotTopologicallyAdmissible exception if the Heegaard bouquet
+        Moreover, if every filling petal is resolved, then this routine will
+        raise a NotTopologicallyAdmissible exception if the filling bouquet
         is not (topologically) admissible. More specifically:
-        --> All the Heegaard petals must meet tangentially at the vertex of
+        --> All the filling petals must meet tangentially at the vertex of
             tri. This routine raises a TransverseHeegaardPetals exception if
             this condition fails.
         --> The boundary surface of tri must remain connected after cutting
-            along all of the Heegaard petals. This routine raises a
+            along all of the filling petals. This routine raises a
             DisconnectedComplement exception if this condition fails.
         """
         # Check for normal curves if it is easy to do so. In particular, this
-        # check only occurs if every Heegaard petal is resolved.
+        # check only occurs if every filling petal is resolved.
         if arcInfo is not None:
             rootArcs, hasNonzero = arcInfo
             if rootArcs == 0 and hasNonzero:
                 raise NormalCurveAfterResolving()
 
-        # If necessary, check that the Heegaard bouquet is admissible.
+        # If necessary, check that the filling bouquet is admissible.
         if tri.isValid() and tri.countBoundaryComponents() == 1:
             genus = ( 2 - tri.boundaryComponent(0).eulerChar() ) // 2
 
-            # Check admissibility if every Heegaard petal is resolved.
+            # Check admissibility if every filling petal is resolved.
             if len(resolved) == genus:
                 _checkAdmissible( tri, resolved )
         else:
             genus = None
 
-        # Only set Heegaard bouquet if all checks pass.
+        # Only set filling bouquet if all checks pass.
         self._tri = tri
         self._weights = weights
         self._resolved = resolved
@@ -564,7 +563,7 @@ class HeegaardBuilder:
 
     def setBouquet( self, tri, weights, resolved=set() ):
         """
-        Set a combinatorially admissible Heegaard bouquet in the given
+        Set a combinatorially admissible filling bouquet in the given
         triangulation tri by directly specifying edge weights and resolved
         edge indices.
 
@@ -586,7 +585,7 @@ class HeegaardBuilder:
             fails.
         (4) If we assign the value weights[i] to tri.edge(i) for every i such
             that tri.edge(i) is boundary, then these values satisfy the
-            matching constraints (described below) for a Heegaard bouquet in
+            matching constraints (described below) for a filling bouquet in
             the boundary of tri. This routine raises a
             FailedMatchingConstraints exception if this condition fails.
         (5) The resolved set (empty by default) must consist of indices of
@@ -596,7 +595,7 @@ class HeegaardBuilder:
         (6) For each i in resolved, weights[i] must be 0. This routine raises
             a WeightOnResolvedEdge exception if this condition fails.
         Moreover, if the input is not "reasonable", then this routine does
-        not change the currently stored Heegaard bouquet.
+        not change the currently stored filling bouquet.
 
         The matching constraints require that for each triangular face F in
         the boundary of tri, either:
@@ -608,29 +607,29 @@ class HeegaardBuilder:
         arcs, in which case condition (b) must hold.
 
         Assuming the input is reasonable, we obtain either:
-        --> a Heegaard bouquet; or
-        --> a union of a Heegaard bouquet with a (possibly disconnected)
+        --> a filling bouquet; or
+        --> a union of a filling bouquet with a (possibly disconnected)
             normal curve.
         In general, this routine does not check for the presence of normal
-        curves. The only exception is when the Heegaard bouquet consists
+        curves. The only exception is when the filling bouquet consists
         entirely of resolved petals, in which case normal curves exist if and
         only if we have one or more nonzero edge weights; in this particular
         case, this routine will raise a NormalCurveAfterResolving exception
         if it detects a normal curve.
 
         This routine also raises a NotCombinatoriallyAdmissible exception if
-        the Heegaard bouquet is not combinatorially admissible.
+        the filling bouquet is not combinatorially admissible.
 
-        However, in general, this routine does not check whether the Heegaard
+        However, in general, this routine does not check whether the filling
         bouquet is (topologically) admissible. The only exception is when
-        every Heegaard petal is resolved, in which case this routine will
-        raise a NotTopologicallyAdmissible exception if the Heegaard bouquet
+        every filling petal is resolved, in which case this routine will
+        raise a NotTopologicallyAdmissible exception if the filling bouquet
         is not admissible. More specifically, depending on precisely how
         admissibility fails, this routine actually raises:
-        --> a TransverseHeegaardPetals exception if there are Heegaard petals
+        --> a TransverseHeegaardPetals exception if there are filling petals
             that meet transversely; or
         --> a DisconnectedComplement exception if the boundary surface of tri
-            becomes disconnected after cutting along the Heegaard petals.
+            becomes disconnected after cutting along the filling petals.
 
         Warning:
         --> This class stores a direct reference to the given triangulation
@@ -639,8 +638,8 @@ class HeegaardBuilder:
                 the triangulation tri.
             (2) You are allowed to modify the triangulation tri using a
                 routine other than one of the routines provided by this
-                class, but doing so will invalidate the Heegaard bouquet; as
-                a result, subsequent attempts to work with this Heegaard
+                class, but doing so will invalidate the filling bouquet; as
+                a result, subsequent attempts to work with this filling
                 bouquet will lead to undefined behaviour.
 
         Pre-condition:
@@ -654,7 +653,7 @@ class HeegaardBuilder:
         _checkBouquet( tri, weights, resolved )
         arcCoords, arcInfo = _computeArcCoords( tri, weights )
 
-        # Also raise a HeegaardError if the Heegaard bouquet is not
+        # Also raise a HeegaardError if the filling bouquet is not
         # combinatorially admissible.
         rootArcs = arcInfo[0]
         chi = tri.boundaryComponent(0).eulerChar() # Equal to (2 - 2*g)
@@ -665,7 +664,7 @@ class HeegaardBuilder:
             raise NotCombinatoriallyAdmissible()
 
         # Since we have checked all the necessary conditions, we can now set
-        # the Heegaard bouquet. Note that the following routine will, if
+        # the filling bouquet. Note that the following routine will, if
         # possible, use the optional arcInfo variable to detect the presence
         # of normal curves.
         self._setBouquetImpl(
@@ -673,7 +672,7 @@ class HeegaardBuilder:
 
     def setClone( self, other ):
         """
-        Set a Heegaard bouquet by cloning the triangulation and bouquet
+        Set a filling bouquet by cloning the triangulation and bouquet
         currently stored by the other HeegaardBuilder.
 
         If the other HeegaardBuilder is empty, then this is equivalent to
@@ -695,7 +694,7 @@ class HeegaardBuilder:
 
     def countResolved(self):
         """
-        Returns the number of resolved petals in the current Heegaard
+        Returns the number of resolved petals in the current filling
         bouquet, or None if this HeegaardBuilder is empty.
         """
         if self.isEmpty():
@@ -772,7 +771,7 @@ class HeegaardBuilder:
         Is the given edge e "resolvable" in the sense that flipping e would
         create a new edge that forms a resolved petal?
 
-        This routine could detect two Heegaard petals that are isotopic; if
+        This routine could detect two filling petals that are isotopic; if
         it does detect such petals, then it raises an IsotopicHeegaardPetals
         exception.
 
@@ -825,28 +824,28 @@ class HeegaardBuilder:
         Flips the given boundary edge e and returns the new boundary edge
         that results from this flip.
 
-        If e is not a resolved Heegaard petal, then this routine
-        automatically updates the stored Heegaard bouquet so that it remains
-        topologically equivalent to the Heegaard bouquet that we had before
+        If e is not a resolved filling petal, then this routine
+        automatically updates the stored filling bouquet so that it remains
+        topologically equivalent to the filling bouquet that we had before
         the flip. However, if e *is* a resolved petal, then this routine
         removes e from the set of resolved petals; the intention is that the
         only time we should ever flip a resolved edge is when we want to
         attach a disc by folding along this edge.
 
-        If flipping the edge e causes every Heegaard petal to become
+        If flipping the edge e causes every filling petal to become
         resolved, then this routine conclusively checks that the stored
-        Heegaard bouquet is "sensible". In detail:
-        (a) Since all the Heegaard petals are resolved, there must be no
+        filling bouquet is "sensible". In detail:
+        (a) Since all the filling petals are resolved, there must be no
             normal curves left over. This routine raises a
             NormalCurveAfterResolving exception if this condition fails.
-        (b) The Heegaard bouquet must be (topologically) admissible. This
+        (b) The filling bouquet must be (topologically) admissible. This
             routine raises a NotTopologicallyAdmissible exception if this
             condition fails. More specifically:
-            --> All the Heegaard petals must meet tangentially at the vertex
+            --> All the filling petals must meet tangentially at the vertex
                 of tri. This routine raises a TransverseHeegaardPetals
                 exception if this particular condition fails.
             --> The boundary surface of tri must remain connected after
-                cutting along all of the Heegaard petals. This routine raises
+                cutting along all of the filling petals. This routine raises
                 a DisconnectedComplement exception if this condition fails.
 
         If edgeRefs is None (the default), then this routine has no
@@ -937,7 +936,7 @@ class HeegaardBuilder:
             if oldInd in self._resolved:
                 newResEdges.add(newInd)
 
-        # Update the Heegaard bouquet. Note that self._setBouquetImpl() will
+        # Update the filling bouquet. Note that self._setBouquetImpl() will
         # check normal curves and admissibility if necessary.
         arcCoords, arcInfo = _computeArcCoords( self._tri, newWeights )
         self._setBouquetImpl(
@@ -950,28 +949,28 @@ class HeegaardBuilder:
         petal, then flips e and returns the new boundary edge that results
         from this flip; otherwise, simply returns None.
 
-        This routine automatically updates the stored Heegaard bouquet so
+        This routine automatically updates the stored filling bouquet so
         that after the flip, it remains topologically equivalent to the
-        currently stored Heegaard bouquet.
+        currently stored filling bouquet.
 
         If e happens to be the new boundary edge that results from layering a
         tetrahedron t, then we flip e by simply removing t. Otherwise, we
         flip e by layering a new tetrahedron across e.
 
-        If flipping the edge e causes every Heegaard petal to become
+        If flipping the edge e causes every filling petal to become
         resolved, then this routine conclusively checks that the stored
-        Heegaard bouquet is "sensible". In detail:
-        (a) Since all the Heegaard petals are resolved, there must be no
+        filling bouquet is "sensible". In detail:
+        (a) Since all the filling petals are resolved, there must be no
             normal curves left over. This routine raises a
             NormalCurveAfterResolving exception if this condition fails.
-        (b) The Heegaard bouquet must be (topologically) admissible. This
+        (b) The filling bouquet must be (topologically) admissible. This
             routine raises a NotTopologicallyAdmissible exception if this
             condition fails. More specifically:
-            --> All the Heegaard petals must meet tangentially at the vertex
+            --> All the filling petals must meet tangentially at the vertex
                 of tri. This routine raises a TransverseHeegaardPetals
                 exception if this particular condition fails.
             --> The boundary surface of tri must remain connected after
-                cutting along all of the Heegaard petals. This routine raises
+                cutting along all of the filling petals. This routine raises
                 a DisconnectedComplement exception if this condition fails.
 
         Pre-condition:
@@ -997,7 +996,7 @@ class HeegaardBuilder:
 
     def resolveAllPetals(self):
         """
-        Flips edges until all of the Heegaard petals are resolved.
+        Flips edges until all of the filling petals are resolved.
 
         This routine chooses reducible edges arbitrarily.
 
@@ -1015,12 +1014,12 @@ class HeegaardBuilder:
                 # If flipping the edge e would leave behind only resolved
                 # petals, then flipEdge() will check that:
                 # - there are no normal arcs; and
-                # - the Heegaard bouquet is (topologically) admissible.
+                # - the filling bouquet is (topologically) admissible.
                 self.flipEdge(e)
                 reduced = True
                 break
             if not reduced:
-                # Since we can always reduce when we have a Heegaard bouquet
+                # Since we can always reduce when we have a filling bouquet
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
@@ -1028,7 +1027,7 @@ class HeegaardBuilder:
 
     def resolveGreedily(self):
         """
-        Greedily flips edges until all of the Heegaard petals are resolved.
+        Greedily flips edges until all of the filling petals are resolved.
 
         The word "greedily" refers to the method by which this routine
         chooses the edge to flip: it always chooses an edge that reduces the
@@ -1051,7 +1050,7 @@ class HeegaardBuilder:
                     reduction = r
                     e = candidate
             if e is None:
-                # Since we can always reduce when we have a Heegaard bouquet
+                # Since we can always reduce when we have a filling bouquet
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
@@ -1059,12 +1058,12 @@ class HeegaardBuilder:
             # If flipping the edge e would leave behind only resolved
             # petals, then flipEdge() will check that:
             # - there are no normal arcs; and
-            # - the Heegaard bouquet is (topologically) admissible.
+            # - the filling bouquet is (topologically) admissible.
             self.flipEdge(e)
 
     def resolveUntilChoice( self, greedy=True ):
         """
-        Attempts to flip edges until all of the Heegaard petals are resolved,
+        Attempts to flip edges until all of the filling petals are resolved,
         but stops when we reach a situation where we have multiple choices
         for which edge to flip.
         
@@ -1074,7 +1073,7 @@ class HeegaardBuilder:
         edges by setting greedy to False, but be warned that this could
         significantly increase the number of available choices.
 
-        This routine returns None if it successfully resolves all Heegaard
+        This routine returns None if it successfully resolves all filling
         petals without ever having to arbitrarily choose among multiple
         reducible edges. However, if such a choice is required, then this
         routine stops flipping edges, and instead returns a list containing
@@ -1106,12 +1105,12 @@ class HeegaardBuilder:
                     # If flipping the edge e would leave behind only resolved
                     # petals, then flipEdge() will check that:
                     # - there are no normal arcs; and
-                    # - the Heegaard bouquet is (topologically) admissible.
+                    # - the filling bouquet is (topologically) admissible.
                     self.flipEdge( redEdges[0] )
                 else:
                     return redEdges
             else:
-                # Since we can always reduce when we have a Heegaard bouquet
+                # Since we can always reduce when we have a filling bouquet
                 # (regardless of whether it is admissible), the only way we
                 # could run out of reducible edges is if we have a normal
                 # curve.
@@ -1124,7 +1123,7 @@ class HeegaardBuilder:
     def resolveInAllWays( self, greedy=True ):
         """
         Yields instances of HeegaardBuilder corresponding to all possible
-        ways to resolve the stored Heegaard bouquet.
+        ways to resolve the stored filling bouquet.
         
         If greedy is True (the default), then this routine only considers
         reducible edges that reduce the total edge weight as much as
@@ -1158,7 +1157,7 @@ class HeegaardBuilder:
                 # If flipping the edge e would leave behind only resolved
                 # petals, then flipEdge() will check that:
                 # - there are no normal arcs; and
-                # - the Heegaard bouquet is (topologically) admissible.
+                # - the filling bouquet is (topologically) admissible.
                 hbClone.flipEdge(
                         hbClone.triangulation().edge( e.index() ) )
                 for r in hbClone.resolveInAllWays(greedy):
@@ -1201,7 +1200,7 @@ class HeegaardBuilder:
             tet[0].join( ver[0][3], tet[1],
                     ver[1] * Perm4(2,3) * ver[0].inverse() )
 
-            # Update the Heegaard bouquet.
+            # Update the filling bouquet.
             wts = [0] * self.triangulation().countEdges()
             self._resolved.discard( e.index() )
             arcCoords, arcInfo = _computeArcCoords( self._tri, wts )
@@ -1315,10 +1314,10 @@ class HeegaardBuilder:
 
     def fillHandlebody(self):
         """
-        If every Heegaard petal is resolved, then fills self.triangulation()
-        with a handlebody H such that each Heegaard petal bounds a disc in H.
+        If every filling petal is resolved, then fills self.triangulation()
+        with a handlebody H such that each filling petal bounds a disc in H.
 
-        If every Heegaard petal is indeed resolved, then this routine also
+        If every filling petal is indeed resolved, then this routine also
         returns True (after it has performed the operation of filling with a
         handlebody). Otherwise, this routine returns False and leaves
         self.triangulation() unchanged.
@@ -1331,7 +1330,7 @@ class HeegaardBuilder:
         if self.countResolved() != self._genus:
             return False
 
-        # We know that every Heegaard petal is resolved. Our goal is to
+        # We know that every filling petal is resolved. Our goal is to
         # attach a disc to each petal by flipping and then folding. However,
         # if this requires us to flip two edges of a single triangle f, then
         # we first need to split f into two triangles by flipping the third
