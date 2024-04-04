@@ -1,0 +1,6 @@
+- Split into multiple files.
+- Functions that bundle together common sequences of operations, such as fillGreedily().
+- Turning normal curves into rooted curves.
+- Taking unions of curves?
+- Extend implementation to allow multiple boundary components.
+- Adapt implementation to allow starting with a surface instead of a 3-manifold.
