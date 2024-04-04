@@ -1,6 +1,7 @@
 """
 Find g-spines in a triangulation.
 """
+#TODO This code is experimental, and currently unfinished.
 from regina import *
 
 
