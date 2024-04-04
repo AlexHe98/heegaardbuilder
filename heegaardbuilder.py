@@ -5,435 +5,6 @@ from heegaarderror import *
 from regina import *
 
 
-#############################################################################
-#                              Helper routines                              #
-#                              ===============                              #
-#############################################################################
-
-
-def _faceNumberings(e):
-    """
-    Returns the triangle indices and vertex numberings for the boundary
-    triangles incident to the given boundary edge e.
-
-    In detail, this routine returns a pair (f, v) such that:
-    --> f[0] is the index of the boundary triangle given by
-            emb.tetrahedron().triangle( emb.vertices()[3] ),
-        where emb = e.embedding(0);
-    --> f[1] is the index of the boundary triangle given by
-            emb.tetrahedron().triangle( emb.vertices()[2] ),
-        where emb = e.embedding( e.degree() - 1 );
-    --> for i,j in {0,1}, v[i][j] is the vertex number of triangle f[i]
-        corresponding to vertex j of the edge e; and
-    --> for i in {0,1}, v[i][2] is the vertex number of triangle f[i]
-        that is opposite the edge e.
-
-    Pre-condition;
-    --> e is a boundary edge of a 3-manifold triangulation.
-    """
-    emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
-    f = []
-    v = []
-    p = [ Perm4(), Perm4(2,3) ]
-    for i in range(2):
-        face = emb[i].tetrahedron().triangle( emb[i].vertices()[3-i] )
-        f.append( face.index() )
-        perm = ( face.embedding(0).vertices().inverse() *
-                emb[i].vertices() * p[i] )
-        v.append( [ perm[0], perm[1], perm[2] ] )
-    return (f, v)
-
-
-def _checkTri(tri):
-    """
-    Checks that the triangulation tri is valid, orientable, one-vertex, and
-    neither closed nor ideal.
-
-    In particular, since tri cannot be closed or ideal, it must have at least
-    one boundary component, and the boundary components are all real (not
-    ideal). The one-vertex assumption further implies that tri has exactly
-    one boundary component.
-
-    This routine raises a BadTriangulation exception if any of the stated
-    conditions fails.
-    """
-    if not tri.isValid():
-        raise BadTriangulation( "invalid" )
-    if not tri.isOrientable():
-        raise BadTriangulation( "not orientable" )
-    if tri.countVertices() != 1:
-        raise BadTriangulation( "not one-vertex" )
-    if tri.isClosed():
-        raise BadTriangulation( "closed" )
-    if tri.isIdeal():
-        raise BadTriangulation( "ideal" )
-
-
-def _checkBouquet( tri, weights, resolved ):
-    """
-    Checks that weights and resolved are formatted correctly.
-
-    Specifically, weights and resolved must satisfy the following conditions:
-    --> weights must be a list or tuple consisting of n non-negative
-        integers, where n = tri.countEdges();
-    --> for each i, weights[i] must be 0 if tri.edge(i) is internal;
-    --> resolved must be a (possibly empty) set consisting of indices of
-        boundary edges of tri; and
-    --> for each i in resolved, weights[i] must be 0.
-    These restrictions on the format are the same as conditions (2), (3),
-    (5) and (6) in the documentation for the HeegaardBuilder.setBouquet()
-    routine.
-
-    If any of these conditions fails, then this routine will raise a subclass
-    of BadBouquet; the specific subclass depends on precisely which condition
-    failed.
-
-    Pre-condition:
-    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
-    """
-    # Check that weights and resolved have the correct format.
-    givenNum = len(weights)
-    requiredNum = tri.countEdges()
-    if givenNum != requiredNum:
-        raise WrongNumberOfWeights( givenNum, requiredNum )
-    for i, wt in enumerate(weights):
-        if wt < 0:
-            raise NegativeEdgeWeight( i, wt )
-        elif wt > 0:
-            if not tri.edge(i).isBoundary():
-                raise WeightOnInternalEdge( i, wt )
-    for i in resolved:
-        if ( i < 0 or i >= tri.countEdges() or
-                not tri.edge(i).isBoundary() ):
-            raise ResolvedInternalEdge(i)
-        if weights[i] > 0:
-            raise WeightOnResolvedEdge( i, weights[i] )
-
-
-def _computeArcCoords( tri, weights ):
-    """
-    Computes the normal and root arc coordinates defined by the given
-    edge weights, and returns these coordinates together with some
-    auxiliary information.
-
-    The arc coordinates only make sense if the given edge weights satisfy the
-    matching constraints for a filling bouquets. Specifically, the matching
-    constraints require that for each triangular face F in the boundary of
-    tri, either:
-    (a) one edge of F contributes more than half of the total weight of all
-        three edges of F; or
-    (b) the total weight of the three edges of F is even.
-    If condition (a) holds, then F contains one or more root arcs. Otherwise,
-    if condition (a) fails, then F must contain only normal arcs, in which
-    case condition (b) must hold.
-
-    This routine raises a FailedMatchingConstraints exception if these
-    matching constraints fail.
-
-    The auxiliary information consists of a tuple with the following entries:
-    (0) The total number of root arcs.
-    (1) A Boolean that is True if and only if at least one arc coordinate
-        is nonzero.
-
-    Pre-condition:
-    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
-    --> weights is formatted correctly, as specified in the documentation for
-        the _checkBouquet() routine.
-    """
-    arcCoords = []
-    totalRootArcs = 0
-    hasNonzero = False
-    for face in tri.triangles():
-        if not face.isBoundary():
-            # No arcs in an internal face.
-            arcCoords.append(None)
-            continue
-
-        wt = [ weights[ face.edge(i).index() ] for i in range(3) ]
-        totalWt = sum(wt)
-        normal = [0,0,0]    # Normal arc coordinates.
-        root = [0,0,0]      # Root arc coordinates.
-
-        # If one edge of this face contributes more than half of the
-        # total weight, then this face contains root arcs.
-        maxWt = 0
-        maxInd = 0
-        for i in range(3):
-            if wt[i] > maxWt:
-                maxWt = wt[i]
-                maxInd = i
-        rootArcs = 2*maxWt - totalWt
-        if rootArcs > 0:
-            root[maxInd] = rootArcs
-            normal[ maxInd - 1 ] = wt[ maxInd - 2 ]
-            normal[ maxInd - 2 ] = wt[ maxInd - 1 ]
-
-            # Update arcCoords, totalRootArcs and hasNonzero.
-            arcCoords.append( normal + root )
-            totalRootArcs += rootArcs
-            hasNonzero = True
-            continue
-
-        # Otherwise, this face must contain only normal arcs, in which
-        # case the total weight must be even.
-        if totalWt % 2 != 0:
-            raise FailedMatchingConstraints( face.index() )
-        for i in range(3):
-            normal[i] = ( wt[i-1] + wt[i-2] - wt[i] ) // 2
-            if normal[i] > 0:
-                hasNonzero = True
-        arcCoords.append( normal + root )
-
-    # We exited the loop, which means that the matching constraints are
-    # satisfied and we successfully compute arc coordinates.
-    return ( arcCoords, ( totalRootArcs, hasNonzero ) )
-
-
-def _checkTangential( tri, resolved ):
-    """
-    Letting R denote the collection of boundary edges of tri given by the
-    list of resolved edge indices, this routine checks that all the edges in
-    R meet tangentially at the vertex of tri.
-
-    This routine raises a TransversePetals exception if this condition fails.
-
-    Pre-condition:
-    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
-    --> resolved is formatted correctly, as specified in the documentation
-        for the _checkBouquet() routine.
-    --> The filling bouquet given by the edges in R is combinatorially
-        admissible.
-    """
-    stack = []
-    bc = tri.boundaryComponent(0)
-    built = bc.build()
-    for emb in built.vertex(0).embeddings():
-        triFace = bc.triangle( emb.triangle().index() )
-        edgeInd = triFace.edge( emb.vertices()[2] ).index()
-        if edgeInd in resolved:
-            if edgeInd in stack:
-                topInd = stack.pop()
-                if topInd != edgeInd:
-                    raise TransversePetals( topInd, edgeInd )
-            else:
-                stack.append(edgeInd)
-
-
-def _checkComplement( tri, resolved ):
-    """
-    Letting R denote the collection of boundary edges of tri given by the
-    list of resolved edge indices, this routine checks that the boundary
-    surface of tri remains connected after cutting along the edges in R.
-
-    This routine raises a DisconnectedComplement exception if this condition
-    fails.
-
-    Pre-condition:
-    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
-    --> resolved is formatted correctly, as specified in the documentation
-        for the _checkBouquet() routine.
-    --> The filling bouquet given by the edges in R is combinatorially
-        admissible.
-    """
-    bc = tri.boundaryComponent(0)
-
-    # Use union-find to count components.
-    parent = dict()
-    size = dict()
-    components = bc.countTriangles()
-    for f in bc.triangles():
-        ind = f.index()
-        parent[ind] = ind
-        size[ind] = 1
-
-    # For each boundary edge e that does not form a resolved filling
-    # petal, take the union of the two components on either side of e.
-    for e in bc.edges():
-        if e.index() in resolved:
-            continue
-
-        # Find representatives for the components on either side of e.
-        f, _ = _faceNumberings(e)
-        for i in range(2):
-            while parent[ f[i] ] != f[i]:
-                # Use path-halving: replace the current parent of f[i]
-                # with its current grandparent, and then go to this
-                # grandparent.
-                parent[ f[i] ] = parent[ parent[ f[i] ] ]
-                f[i] = parent[ f[i] ]
-
-        # Since we are *not* cutting along the edge e, take the union of
-        # the components on either side.
-        if f[0] == f[1]:
-            continue
-        if size[ f[0] ] < size[ f[1] ]:
-            f[0], f[1] = f[1], f[0]
-        parent[ f[1] ] = f[0]
-        size[ f[0] ] = size[ f[0] ] + size[ f[1] ]
-        components -= 1
-
-        # If we are already down to one component, then we are done.
-        if components == 1:
-            return
-
-    # If we exit the above loop, then we never managed to get the number
-    # of components down to one.
-    raise DisconnectedComplement(components)
-
-
-def _checkAdmissible( tri, resolved ):
-    """
-    Letting R denote the collection of boundary edges of tri given by the
-    list of resolved edge indices, this routine checks that R describes a
-    (topologically) admissible filling bouquet in the boundary of tri.
-
-    This routine raises a NotTopologicallyAdmissible exception if this
-    condition fails. More specifically:
-    (1) All the edges in R must meet tangentially at the vertex of tri. This
-        routine raises a TransversePetals exception if this condition fails.
-    (2) The boundary surface of tri must remain connected after cutting along
-        the edges in R. This routine raises a DisconnectedComplement
-        exception if this condition fails.
-
-    Pre-condition:
-    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
-    --> resolved is formatted correctly, as specified in the documentation
-        for the _checkBouquet() routine.
-    --> The filling bouquet given by the edges in R is combinatorially
-        admissible.
-    """
-    _checkTangential( tri, resolved )
-    _checkComplement( tri, resolved )
-
-
-def _recogniseLayer(e):
-    """
-    Checks whether e is the new boundary edge that results from layering a
-    tetrahedron t across an edge ee, and if so returns details of this
-    layering; otherwise, returns None.
-
-    Specifically, if we do have such a layering, then this routine returns a
-    a 2-tuple containing the following items:
-    (0) the tetrahedron t; and
-    (1) an edge-embedding of the edge ee that references a tetrahedron tt
-        such that tt != t.
-    """
-    # The edge e must be a boundary edge of t of degree 1.
-    if not e.isBoundary() or e.degree() != 1:
-        return None
-
-    # The opposite edge must be internal, and the opposite triangles must be
-    # internal and distinct.
-    tet = e.embedding(0).tetrahedron()
-    ver = e.embedding(0).vertices()
-    oppEdge = tet.edge( ver[2], ver[3] )
-    if oppEdge.isBoundary():
-        return None
-    oppTri = [ tet.triangle( ver[i] ) for i in range(2) ]
-    if ( oppTri[0].isBoundary() or oppTri[1].isBoundary() or
-            oppTri[0] == oppTri[1] ):
-        return None
-
-    # Find an edge-embedding of oppEdge that references a tetrahedron other
-    # than tet.
-    for oppEmb in oppEdge.embeddings():
-        if oppEmb.tetrahedron() != tet:
-            break
-    return ( tet, oppEmb )
-
-
-def _addEdgeReference( edge, edgeRefs ):
-    """
-    Update edgeRefs to include the given edge.
-
-    edgeRefs must be a 2-element list consisting of the following items:
-    (0) A list F of edge-embeddings of distinct boundary edges of some
-        3-manifold triangulation T. (The intention is that F is a stack of
-        edges that we wish to flip one by one, which requires that we keep
-        track of these edges as we perform flips.)
-    (1) A dictionary D that maps tetrahedron indices i to the set of
-        locations in the list F that reference tetrahedron i of the
-        triangulation T. We allow D to reference locations that no longer
-        exist in F because the corresponding element was popped from the end
-        of F at some point.
-
-    This routine adds an edge-embedding of the given edge to the list F, and
-    updates the dictionary D accordingly.
-    """
-    flip, refTetInds = edgeRefs
-    emb = edge.embedding(0)
-    tetInd = emb.tetrahedron().index()
-    if tetInd in refTetInds:
-        refTetInds[tetInd].add( len(flip) )
-    else:
-        refTetInds[tetInd] = { len(flip) }
-    flip.append(emb)
-
-
-def _adjustEdgeReferences( edgeRefs, doomed ):
-    """
-    Adjust edgeRefs so that it no longer references the doomed tetrahedron.
-
-    edgeRefs must be a 2-element list consisting of the following items:
-    (0) A list F of edge-embeddings of distinct boundary edges of some
-        3-manifold triangulation T. (The intention is that F is a stack of
-        edges that we wish to flip one by one, which requires that we keep
-        track of these edges as we perform flips.)
-    (1) A dictionary D that maps tetrahedron indices i to the set of
-        locations in the list F that reference tetrahedron i of the
-        triangulation T. We allow D to reference locations that no longer
-        exist in F because the corresponding element was popped from the end
-        of F at some point.
-
-    This routine adjusts the edge-embeddings in the list F so that none of
-    these edge-embeddings references the doomed tetrahedron, and updates the
-    dictionary D accordingly.
-    """
-    flip, refTetInds = edgeRefs
-
-    # Make sure we stop referencing the doomed tetrahedron.
-    if doomed.index() in refTetInds:
-        for loc in refTetInds[ doomed.index() ]:
-            if loc >= len(flip):
-                # This can happen when flip is intended to be a stack, in
-                # which case refTetInds may reference an element that
-                # has been removed from flip.
-                continue
-
-            # Find new edge-embedding that avoids the doomed tetrahedron.
-            oldEmb = flip[loc]
-            oldRefTet = oldEmb.tetrahedron()
-            oldRefNum = oldEmb.edge()
-            refEdge = oldRefTet.edge(oldRefNum)
-            for newEmb in refEdge.embeddings():
-                newRefTet = newEmb.tetrahedron()
-                if newRefTet != doomed:
-                    break
-
-            # Update both flip and refTetInds.
-            flip[loc] = newEmb
-            if newRefTet.index() in refTetInds:
-                refTetInds[ newRefTet.index() ].add(loc)
-            else:
-                refTetInds[ newRefTet.index() ] = {loc}
-
-    # Account for the renumbering of tetrahedra.
-    newRefTetInds = dict()
-    for tetInd in refTetInds:
-        if tetInd > doomed.index():
-            newRefTetInds[ tetInd - 1 ] = refTetInds[tetInd]
-        elif tetInd < doomed.index():
-            newRefTetInds[tetInd] = refTetInds[tetInd]
-    refTetInds.clear()
-    refTetInds.update(newRefTetInds)
-
-
-#############################################################################
-#                     Implementation of HeegaardBuilder                     #
-#                     =================================                     #
-#############################################################################
-
-
 class HeegaardBuilder:
     """
     Implements the various subroutines needed to execute an algorithm for
@@ -1380,3 +951,426 @@ class HeegaardBuilder:
         # construction by filling with a ball.
         self._fillBall()
         return True
+
+
+#############################################################################
+#                              Helper routines                              #
+#                              ===============                              #
+#############################################################################
+
+
+def _faceNumberings(e):
+    """
+    Returns the triangle indices and vertex numberings for the boundary
+    triangles incident to the given boundary edge e.
+
+    In detail, this routine returns a pair (f, v) such that:
+    --> f[0] is the index of the boundary triangle given by
+            emb.tetrahedron().triangle( emb.vertices()[3] ),
+        where emb = e.embedding(0);
+    --> f[1] is the index of the boundary triangle given by
+            emb.tetrahedron().triangle( emb.vertices()[2] ),
+        where emb = e.embedding( e.degree() - 1 );
+    --> for i,j in {0,1}, v[i][j] is the vertex number of triangle f[i]
+        corresponding to vertex j of the edge e; and
+    --> for i in {0,1}, v[i][2] is the vertex number of triangle f[i]
+        that is opposite the edge e.
+
+    Pre-condition;
+    --> e is a boundary edge of a 3-manifold triangulation.
+    """
+    emb = [ e.embedding(0), e.embedding( e.degree() - 1 ) ]
+    f = []
+    v = []
+    p = [ Perm4(), Perm4(2,3) ]
+    for i in range(2):
+        face = emb[i].tetrahedron().triangle( emb[i].vertices()[3-i] )
+        f.append( face.index() )
+        perm = ( face.embedding(0).vertices().inverse() *
+                emb[i].vertices() * p[i] )
+        v.append( [ perm[0], perm[1], perm[2] ] )
+    return (f, v)
+
+
+def _checkTri(tri):
+    """
+    Checks that the triangulation tri is valid, orientable, one-vertex, and
+    neither closed nor ideal.
+
+    In particular, since tri cannot be closed or ideal, it must have at least
+    one boundary component, and the boundary components are all real (not
+    ideal). The one-vertex assumption further implies that tri has exactly
+    one boundary component.
+
+    This routine raises a BadTriangulation exception if any of the stated
+    conditions fails.
+    """
+    if not tri.isValid():
+        raise BadTriangulation( "invalid" )
+    if not tri.isOrientable():
+        raise BadTriangulation( "not orientable" )
+    if tri.countVertices() != 1:
+        raise BadTriangulation( "not one-vertex" )
+    if tri.isClosed():
+        raise BadTriangulation( "closed" )
+    if tri.isIdeal():
+        raise BadTriangulation( "ideal" )
+
+
+def _checkBouquet( tri, weights, resolved ):
+    """
+    Checks that weights and resolved are formatted correctly.
+
+    Specifically, weights and resolved must satisfy the following conditions:
+    --> weights must be a list or tuple consisting of n non-negative
+        integers, where n = tri.countEdges();
+    --> for each i, weights[i] must be 0 if tri.edge(i) is internal;
+    --> resolved must be a (possibly empty) set consisting of indices of
+        boundary edges of tri; and
+    --> for each i in resolved, weights[i] must be 0.
+    These restrictions on the format are the same as conditions (2), (3),
+    (5) and (6) in the documentation for the HeegaardBuilder.setBouquet()
+    routine.
+
+    If any of these conditions fails, then this routine will raise a subclass
+    of BadBouquet; the specific subclass depends on precisely which condition
+    failed.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
+    """
+    # Check that weights and resolved have the correct format.
+    givenNum = len(weights)
+    requiredNum = tri.countEdges()
+    if givenNum != requiredNum:
+        raise WrongNumberOfWeights( givenNum, requiredNum )
+    for i, wt in enumerate(weights):
+        if wt < 0:
+            raise NegativeEdgeWeight( i, wt )
+        elif wt > 0:
+            if not tri.edge(i).isBoundary():
+                raise WeightOnInternalEdge( i, wt )
+    for i in resolved:
+        if ( i < 0 or i >= tri.countEdges() or
+                not tri.edge(i).isBoundary() ):
+            raise ResolvedInternalEdge(i)
+        if weights[i] > 0:
+            raise WeightOnResolvedEdge( i, weights[i] )
+
+
+def _computeArcCoords( tri, weights ):
+    """
+    Computes the normal and root arc coordinates defined by the given
+    edge weights, and returns these coordinates together with some
+    auxiliary information.
+
+    The arc coordinates only make sense if the given edge weights satisfy the
+    matching constraints for a filling bouquets. Specifically, the matching
+    constraints require that for each triangular face F in the boundary of
+    tri, either:
+    (a) one edge of F contributes more than half of the total weight of all
+        three edges of F; or
+    (b) the total weight of the three edges of F is even.
+    If condition (a) holds, then F contains one or more root arcs. Otherwise,
+    if condition (a) fails, then F must contain only normal arcs, in which
+    case condition (b) must hold.
+
+    This routine raises a FailedMatchingConstraints exception if these
+    matching constraints fail.
+
+    The auxiliary information consists of a tuple with the following entries:
+    (0) The total number of root arcs.
+    (1) A Boolean that is True if and only if at least one arc coordinate
+        is nonzero.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
+    --> weights is formatted correctly, as specified in the documentation for
+        the _checkBouquet() routine.
+    """
+    arcCoords = []
+    totalRootArcs = 0
+    hasNonzero = False
+    for face in tri.triangles():
+        if not face.isBoundary():
+            # No arcs in an internal face.
+            arcCoords.append(None)
+            continue
+
+        wt = [ weights[ face.edge(i).index() ] for i in range(3) ]
+        totalWt = sum(wt)
+        normal = [0,0,0]    # Normal arc coordinates.
+        root = [0,0,0]      # Root arc coordinates.
+
+        # If one edge of this face contributes more than half of the
+        # total weight, then this face contains root arcs.
+        maxWt = 0
+        maxInd = 0
+        for i in range(3):
+            if wt[i] > maxWt:
+                maxWt = wt[i]
+                maxInd = i
+        rootArcs = 2*maxWt - totalWt
+        if rootArcs > 0:
+            root[maxInd] = rootArcs
+            normal[ maxInd - 1 ] = wt[ maxInd - 2 ]
+            normal[ maxInd - 2 ] = wt[ maxInd - 1 ]
+
+            # Update arcCoords, totalRootArcs and hasNonzero.
+            arcCoords.append( normal + root )
+            totalRootArcs += rootArcs
+            hasNonzero = True
+            continue
+
+        # Otherwise, this face must contain only normal arcs, in which
+        # case the total weight must be even.
+        if totalWt % 2 != 0:
+            raise FailedMatchingConstraints( face.index() )
+        for i in range(3):
+            normal[i] = ( wt[i-1] + wt[i-2] - wt[i] ) // 2
+            if normal[i] > 0:
+                hasNonzero = True
+        arcCoords.append( normal + root )
+
+    # We exited the loop, which means that the matching constraints are
+    # satisfied and we successfully compute arc coordinates.
+    return ( arcCoords, ( totalRootArcs, hasNonzero ) )
+
+
+def _checkTangential( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that all the edges in
+    R meet tangentially at the vertex of tri.
+
+    This routine raises a TransversePetals exception if this condition fails.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The filling bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    stack = []
+    bc = tri.boundaryComponent(0)
+    built = bc.build()
+    for emb in built.vertex(0).embeddings():
+        triFace = bc.triangle( emb.triangle().index() )
+        edgeInd = triFace.edge( emb.vertices()[2] ).index()
+        if edgeInd in resolved:
+            if edgeInd in stack:
+                topInd = stack.pop()
+                if topInd != edgeInd:
+                    raise TransversePetals( topInd, edgeInd )
+            else:
+                stack.append(edgeInd)
+
+
+def _checkComplement( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that the boundary
+    surface of tri remains connected after cutting along the edges in R.
+
+    This routine raises a DisconnectedComplement exception if this condition
+    fails.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The filling bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    bc = tri.boundaryComponent(0)
+
+    # Use union-find to count components.
+    parent = dict()
+    size = dict()
+    components = bc.countTriangles()
+    for f in bc.triangles():
+        ind = f.index()
+        parent[ind] = ind
+        size[ind] = 1
+
+    # For each boundary edge e that does not form a resolved filling
+    # petal, take the union of the two components on either side of e.
+    for e in bc.edges():
+        if e.index() in resolved:
+            continue
+
+        # Find representatives for the components on either side of e.
+        f, _ = _faceNumberings(e)
+        for i in range(2):
+            while parent[ f[i] ] != f[i]:
+                # Use path-halving: replace the current parent of f[i]
+                # with its current grandparent, and then go to this
+                # grandparent.
+                parent[ f[i] ] = parent[ parent[ f[i] ] ]
+                f[i] = parent[ f[i] ]
+
+        # Since we are *not* cutting along the edge e, take the union of
+        # the components on either side.
+        if f[0] == f[1]:
+            continue
+        if size[ f[0] ] < size[ f[1] ]:
+            f[0], f[1] = f[1], f[0]
+        parent[ f[1] ] = f[0]
+        size[ f[0] ] = size[ f[0] ] + size[ f[1] ]
+        components -= 1
+
+        # If we are already down to one component, then we are done.
+        if components == 1:
+            return
+
+    # If we exit the above loop, then we never managed to get the number
+    # of components down to one.
+    raise DisconnectedComplement(components)
+
+
+def _checkAdmissible( tri, resolved ):
+    """
+    Letting R denote the collection of boundary edges of tri given by the
+    list of resolved edge indices, this routine checks that R describes a
+    (topologically) admissible filling bouquet in the boundary of tri.
+
+    This routine raises a NotTopologicallyAdmissible exception if this
+    condition fails. More specifically:
+    (1) All the edges in R must meet tangentially at the vertex of tri. This
+        routine raises a TransversePetals exception if this condition fails.
+    (2) The boundary surface of tri must remain connected after cutting along
+        the edges in R. This routine raises a DisconnectedComplement
+        exception if this condition fails.
+
+    Pre-condition:
+    --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
+    --> resolved is formatted correctly, as specified in the documentation
+        for the _checkBouquet() routine.
+    --> The filling bouquet given by the edges in R is combinatorially
+        admissible.
+    """
+    _checkTangential( tri, resolved )
+    _checkComplement( tri, resolved )
+
+
+def _recogniseLayer(e):
+    """
+    Checks whether e is the new boundary edge that results from layering a
+    tetrahedron t across an edge ee, and if so returns details of this
+    layering; otherwise, returns None.
+
+    Specifically, if we do have such a layering, then this routine returns a
+    a 2-tuple containing the following items:
+    (0) the tetrahedron t; and
+    (1) an edge-embedding of the edge ee that references a tetrahedron tt
+        such that tt != t.
+    """
+    # The edge e must be a boundary edge of t of degree 1.
+    if not e.isBoundary() or e.degree() != 1:
+        return None
+
+    # The opposite edge must be internal, and the opposite triangles must be
+    # internal and distinct.
+    tet = e.embedding(0).tetrahedron()
+    ver = e.embedding(0).vertices()
+    oppEdge = tet.edge( ver[2], ver[3] )
+    if oppEdge.isBoundary():
+        return None
+    oppTri = [ tet.triangle( ver[i] ) for i in range(2) ]
+    if ( oppTri[0].isBoundary() or oppTri[1].isBoundary() or
+            oppTri[0] == oppTri[1] ):
+        return None
+
+    # Find an edge-embedding of oppEdge that references a tetrahedron other
+    # than tet.
+    for oppEmb in oppEdge.embeddings():
+        if oppEmb.tetrahedron() != tet:
+            break
+    return ( tet, oppEmb )
+
+
+def _addEdgeReference( edge, edgeRefs ):
+    """
+    Update edgeRefs to include the given edge.
+
+    edgeRefs must be a 2-element list consisting of the following items:
+    (0) A list F of edge-embeddings of distinct boundary edges of some
+        3-manifold triangulation T. (The intention is that F is a stack of
+        edges that we wish to flip one by one, which requires that we keep
+        track of these edges as we perform flips.)
+    (1) A dictionary D that maps tetrahedron indices i to the set of
+        locations in the list F that reference tetrahedron i of the
+        triangulation T. We allow D to reference locations that no longer
+        exist in F because the corresponding element was popped from the end
+        of F at some point.
+
+    This routine adds an edge-embedding of the given edge to the list F, and
+    updates the dictionary D accordingly.
+    """
+    flip, refTetInds = edgeRefs
+    emb = edge.embedding(0)
+    tetInd = emb.tetrahedron().index()
+    if tetInd in refTetInds:
+        refTetInds[tetInd].add( len(flip) )
+    else:
+        refTetInds[tetInd] = { len(flip) }
+    flip.append(emb)
+
+
+def _adjustEdgeReferences( edgeRefs, doomed ):
+    """
+    Adjust edgeRefs so that it no longer references the doomed tetrahedron.
+
+    edgeRefs must be a 2-element list consisting of the following items:
+    (0) A list F of edge-embeddings of distinct boundary edges of some
+        3-manifold triangulation T. (The intention is that F is a stack of
+        edges that we wish to flip one by one, which requires that we keep
+        track of these edges as we perform flips.)
+    (1) A dictionary D that maps tetrahedron indices i to the set of
+        locations in the list F that reference tetrahedron i of the
+        triangulation T. We allow D to reference locations that no longer
+        exist in F because the corresponding element was popped from the end
+        of F at some point.
+
+    This routine adjusts the edge-embeddings in the list F so that none of
+    these edge-embeddings references the doomed tetrahedron, and updates the
+    dictionary D accordingly.
+    """
+    flip, refTetInds = edgeRefs
+
+    # Make sure we stop referencing the doomed tetrahedron.
+    if doomed.index() in refTetInds:
+        for loc in refTetInds[ doomed.index() ]:
+            if loc >= len(flip):
+                # This can happen when flip is intended to be a stack, in
+                # which case refTetInds may reference an element that
+                # has been removed from flip.
+                continue
+
+            # Find new edge-embedding that avoids the doomed tetrahedron.
+            oldEmb = flip[loc]
+            oldRefTet = oldEmb.tetrahedron()
+            oldRefNum = oldEmb.edge()
+            refEdge = oldRefTet.edge(oldRefNum)
+            for newEmb in refEdge.embeddings():
+                newRefTet = newEmb.tetrahedron()
+                if newRefTet != doomed:
+                    break
+
+            # Update both flip and refTetInds.
+            flip[loc] = newEmb
+            if newRefTet.index() in refTetInds:
+                refTetInds[ newRefTet.index() ].add(loc)
+            else:
+                refTetInds[ newRefTet.index() ] = {loc}
+
+    # Account for the renumbering of tetrahedra.
+    newRefTetInds = dict()
+    for tetInd in refTetInds:
+        if tetInd > doomed.index():
+            newRefTetInds[ tetInd - 1 ] = refTetInds[tetInd]
+        elif tetInd < doomed.index():
+            newRefTetInds[tetInd] = refTetInds[tetInd]
+    refTetInds.clear()
+    refTetInds.update(newRefTetInds)
