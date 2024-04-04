@@ -31,7 +31,7 @@ class BadTriangulation(HeegaardError):
 
 class BadBouquet(HeegaardError):
     """
-    Raised when a HeegaardBuilder object detects a bad Heegaard bouquet.
+    Raised when a HeegaardBuilder object detects a bad filling bouquet.
     """
     pass
 
@@ -94,7 +94,7 @@ class WeightOnResolvedEdge(BadBouquet):
 class FailedMatchingConstraints(BadBouquet):
     """
     Raised when a HeegaardBuilder object is given edge weights that fail to
-    satisfy the matching constraints for a Heegaard bouquet.
+    satisfy the matching constraints for a filling bouquet.
     """
     def __init__( self, faceIndex ):
         msg = ( "Edge weights fail to satisfy the matching constraints " +
@@ -104,41 +104,41 @@ class FailedMatchingConstraints(BadBouquet):
 
 class NotCombinatoriallyAdmissible(BadBouquet):
     """
-    Raised when a HeegaardBuilder object detects that the stored Heegaard
+    Raised when a HeegaardBuilder object detects that the stored filling
     bouquet is not combinatorially admissible.
     """
     def __init__(self):
-        msg = ( "The Heegaard bouquet is not combinatorially admissible." )
+        msg = ( "The filling bouquet is not combinatorially admissible." )
         super().__init__(msg)
 
 
 class NotTopologicallyAdmissible(BadBouquet):
     """
-    Raised when a HeegaardBuilder object detects that the stored Heegaard
+    Raised when a HeegaardBuilder object detects that the stored filling
     bouquet is not (topologically) admissible.
     """
     pass
 
 
-class TransverseHeegaardPetals(NotTopologicallyAdmissible):
+class TransversePetals(NotTopologicallyAdmissible):
     """
     Raised when a HeegaardBuilder object encounters a pair of edges that form
-    resolved Heegaard petals that meet transversely.
+    resolved filling petals that meet transversely.
     """
     def __init__( self, myEdgeInd, yourEdgeInd ):
         msg = ( "Edges {} and {} form a ".format( myEdgeInd, yourEdgeInd ) +
-                "pair of resolved Heegaard petals that meet transversely." )
+                "pair of resolved filling petals that meet transversely." )
         super().__init__(msg)
 
 
 class DisconnectedComplement(NotTopologicallyAdmissible):
     """
     Raised when a HeegaardBuilder object detects that cutting along the
-    stored Heegaard bouquet would disconnect the boundary surface of the
+    stored filling bouquet would disconnect the boundary surface of the
     stored triangulation.
     """
     def __init__( self, numComponents ):
-        msg = ( "After cutting along the Heegaard bouquet, the boundary " +
+        msg = ( "After cutting along the filling bouquet, the boundary " +
                 "surface splits into {} components.".format(numComponents) )
         super().__init__(msg)
 
@@ -146,22 +146,22 @@ class DisconnectedComplement(NotTopologicallyAdmissible):
 class NormalCurveAfterResolving(BadBouquet):
     """
     Raised when a HeegaardBuilder object detects a normal curve that is left
-    over after resolving all Heegaard petals.
+    over after resolving all filling petals.
     """
     def __init__(self):
         msg = ( "A normal curve was left over after resolving all " +
-                "Heegaard petals." )
+                "filling petals." )
         super().__init__(msg)
 
 
-class IsotopicHeegaardPetals(BadBouquet):
+class IsotopicPetals(BadBouquet):
     """
     Raised when a HeegaardBuilder object detects an edge that is incident to
-    two or more Heegaard petals that are all isotopic to each other.
+    two or more filling petals that are all isotopic to each other.
     """
     def __init__( self, edgeIndex, numIsotopicPetals ):
         msg = ( "Edge {} meets {} ".format( edgeIndex, numIsotopicPetals ) +
-                "Heegaard petals that are isotopic to each other." )
+                "filling petals that are isotopic to each other." )
 
 
 class NoReducibleEdge(BadBouquet):

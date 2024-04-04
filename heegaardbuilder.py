@@ -195,8 +195,7 @@ def _checkTangential( tri, resolved ):
     list of resolved edge indices, this routine checks that all the edges in
     R meet tangentially at the vertex of tri.
 
-    This routine raises a TransverseHeegaardPetals exception if this
-    condition fails.
+    This routine raises a TransversePetals exception if this condition fails.
 
     Pre-condition:
     --> tri is valid, orientable, one-vertex, and neither closed nor ideal.
@@ -215,7 +214,7 @@ def _checkTangential( tri, resolved ):
             if edgeInd in stack:
                 topInd = stack.pop()
                 if topInd != edgeInd:
-                    raise TransverseHeegaardPetals( topInd, edgeInd )
+                    raise TransversePetals( topInd, edgeInd )
             else:
                 stack.append(edgeInd)
 
@@ -291,8 +290,7 @@ def _checkAdmissible( tri, resolved ):
     This routine raises a NotTopologicallyAdmissible exception if this
     condition fails. More specifically:
     (1) All the edges in R must meet tangentially at the vertex of tri. This
-        routine raises a TransverseHeegaardPetals exception if this condition
-        fails.
+        routine raises a TransversePetals exception if this condition fails.
     (2) The boundary surface of tri must remain connected after cutting along
         the edges in R. This routine raises a DisconnectedComplement
         exception if this condition fails.
@@ -531,8 +529,8 @@ class HeegaardBuilder:
         raise a NotTopologicallyAdmissible exception if the filling bouquet
         is not (topologically) admissible. More specifically:
         --> All the filling petals must meet tangentially at the vertex of
-            tri. This routine raises a TransverseHeegaardPetals exception if
-            this condition fails.
+            tri. This routine raises a TransversePetals exception if this
+            condition fails.
         --> The boundary surface of tri must remain connected after cutting
             along all of the filling petals. This routine raises a
             DisconnectedComplement exception if this condition fails.
@@ -626,8 +624,8 @@ class HeegaardBuilder:
         raise a NotTopologicallyAdmissible exception if the filling bouquet
         is not admissible. More specifically, depending on precisely how
         admissibility fails, this routine actually raises:
-        --> a TransverseHeegaardPetals exception if there are filling petals
-            that meet transversely; or
+        --> a TransversePetals exception if there are filling petals that
+            meet transversely; or
         --> a DisconnectedComplement exception if the boundary surface of tri
             becomes disconnected after cutting along the filling petals.
 
@@ -772,7 +770,7 @@ class HeegaardBuilder:
         create a new edge that forms a resolved petal?
 
         This routine could detect two filling petals that are isotopic; if
-        it does detect such petals, then it raises an IsotopicHeegaardPetals
+        it does detect such petals, then it raises an IsotopicPetals
         exception.
 
         Pre-condition:
@@ -817,7 +815,7 @@ class HeegaardBuilder:
         if newResolvedPetals == 1:
             return True
         else:
-            raise IsotopicHeegaardPetals( e.index(), newResolvedPetals )
+            raise IsotopicPetals( e.index(), newResolvedPetals )
 
     def _flipEdgeImpl( self, e, edgeRefs=None ):
         """
@@ -842,8 +840,8 @@ class HeegaardBuilder:
             routine raises a NotTopologicallyAdmissible exception if this
             condition fails. More specifically:
             --> All the filling petals must meet tangentially at the vertex
-                of tri. This routine raises a TransverseHeegaardPetals
-                exception if this particular condition fails.
+                of tri. This routine raises a TransversePetals exception if
+                this particular condition fails.
             --> The boundary surface of tri must remain connected after
                 cutting along all of the filling petals. This routine raises
                 a DisconnectedComplement exception if this condition fails.
@@ -967,8 +965,8 @@ class HeegaardBuilder:
             routine raises a NotTopologicallyAdmissible exception if this
             condition fails. More specifically:
             --> All the filling petals must meet tangentially at the vertex
-                of tri. This routine raises a TransverseHeegaardPetals
-                exception if this particular condition fails.
+                of tri. This routine raises a TransversePetals exception if
+                this particular condition fails.
             --> The boundary surface of tri must remain connected after
                 cutting along all of the filling petals. This routine raises
                 a DisconnectedComplement exception if this condition fails.

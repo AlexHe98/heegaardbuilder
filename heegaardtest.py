@@ -30,7 +30,7 @@ if __name__ == "__main__":
             [ (0,0,0,2,2,2,3,1,1), {0,2},
                 "Normal curve", NormalCurveAfterResolving ],
             [ (0,0,0,0,0,0,0,0,0), {0,2},
-                "Transverse Heegaard petals", TransverseHeegaardPetals ] ]
+                "Transverse Heegaard petals", TransversePetals ] ]
     tri = Triangulation3.fromIsoSig(sigGenus2)
     for w, r, name, exception in setError:
         print(name)
@@ -167,8 +167,8 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.isResolvable( tri.edge(1) )
-    except IsotopicHeegaardPetals as e:
-        print( "    Correctly raised IsotopicHeegaardPetals: {}".format(e) )
+    except IsotopicPetals as e:
+        print( "    Correctly raised IsotopicPetals: {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect isotopic petals." )
     print( "    Passed." )
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except TransverseHeegaardPetals as e:
+    except TransversePetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect transverse petals." )
@@ -336,7 +336,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except IsotopicHeegaardPetals as e:
+    except IsotopicPetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect isotopic petals." )
@@ -347,7 +347,7 @@ if __name__ == "__main__":
     hb.setBouquet( tri, w )
     try:
         hb.resolveAllPetals()
-    except TransverseHeegaardPetals as e:
+    except TransversePetals as e:
         print( "    {}".format(e) )
     else:
         raise RuntimeError( "Failed to detect transverse petals." )
