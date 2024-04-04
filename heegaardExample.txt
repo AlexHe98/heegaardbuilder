@@ -71,7 +71,7 @@ Traceback (most recent call last):
   File "<console>", line 1, in <module>
   File "<string>", line 598, in setBouquet
   File "<string>", line 170, in _computeArcCoords
-ValueError: Edge weights fail to satisfy the matching constraints in triangle 9.
+FailedMatchingConstraints: Edge weights fail to satisfy the matching constraints in triangle 9.
 >>> # Sometimes, the error will only occur after you try to resolve.
 >>> weights = (1,1,2,0,1,1,0,0,0)
 >>> hb.setBouquet( tri, weights )
@@ -84,5 +84,5 @@ Traceback (most recent call last):
   File "<string>", line 529, in _setBouquetImpl
   File "<string>", line 288, in _checkAdmissible
   File "<string>", line 207, in _checkTangential
-ValueError: Edges 12 and 13 form Heegaard petals that meet transversely.
+TransversePetals: Edges 12 and 13 form a pair of filling petals that meet transversely.
 
