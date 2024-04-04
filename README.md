@@ -18,10 +18,10 @@ Thompson*.
 
 The main implementation for this algorithm is contained in the script
 ``heegaardbuilder.py``. The best ways to use this script are to either:
-    - run it with Regina's regina-python command-line program in interactive
-        mode; or
-    - import it into the Python console provided by Regina's graphical user
-        interface.
+- run it with Regina's regina-python command-line program in interactive
+    mode; or
+- import it into the Python console provided by Regina's graphical user
+    interface.
 
 See ``heegaardExample.txt`` for a transcript of a regina-python session
 using ``heegaardbuilder.py``.
