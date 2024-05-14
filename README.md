@@ -14,7 +14,8 @@ to turn a Heegaard splitting of a closed 3-manifold *M* into a one-vertex
 triangulation of *M*.
 
 The filling algorithm was designed in joint work with *James Morgan* and *Em
-Thompson*.
+Thompson*. Details can be found in our preprint at:
+    https://arxiv.org/abs/2312.17556.
 
 The main implementation for this algorithm is contained in the script
 ``heegaardbuilder.py``. The best ways to use this script are to either:
