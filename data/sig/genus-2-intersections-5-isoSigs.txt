@@ -1,0 +1,18 @@
+Weight Vector               | Iso Sig                             | Simplified IsoSig                   
+-------------------------------------------------------------------------------------------------------
+[0, 0, 0, 0, 0, 0, 2, 1, 2] | kLLALzQkcedehgjhiijpajajrictbo      | cMcabbjaj                           
+[0, 0, 0, 0, 1, 0, 2, 1, 1] | gLLAQccdefffaovhprj                 | cMcabbgqw                           
+[0, 0, 0, 0, 1, 1, 1, 0, 2] | jLLwPPQcedghfghiiatwakcvrqc         | cMcabbgaj                           
+[0, 0, 0, 0, 1, 2, 0, 0, 2] | kLLALMMkbcedhfhiijjarhvlvlavfo      | cMcabbjqw                           
+[0, 0, 0, 0, 1, 2, 1, 0, 1] | iLLvQQccdhgghffhuoaqjofok           | bkaajj                              
+[0, 0, 0, 1, 0, 2, 0, 1, 1] | gLLAQccdefffawvhprv                 | eLPkbcddddrwos                      
+[0, 0, 1, 0, 0, 2, 0, 1, 1] | gLLAQccdefffawvhlsv                 | dLQbcbchhjw                         
+[0, 0, 1, 2, 1, 0, 0, 0, 1] | mLvAMALQPcdegfhfjikklluruacovafgglc | cMcabbjxr                           
+[0, 0, 2, 0, 1, 0, 1, 0, 1] | iLvAMQcbeffggfhhldlatcnrv           | dLQbccchhrw                         
+[0, 1, 0, 0, 1, 0, 1, 2, 0] | gLLAQccdefffaovhawv                 | cMcabbjak                           
+[0, 1, 0, 1, 2, 0, 1, 0, 0] | mLvAwPPPQcdefhgihkjklluruqkouvbgbeo | cPcbbbqxh                           
+[1, 0, 0, 0, 1, 1, 0, 2, 0] | gLLAQccdefffawvhusb                 | dLQbcbchxwn                         
+[1, 0, 0, 1, 2, 0, 0, 1, 0] | jLvAMPQcdegfgihhiuruacbecvg         | cMcabbjqs                           
+[1, 0, 2, 1, 0, 0, 0, 0, 1] | lLLAMvQMccedefgihjjkklpjaanafgglc   | dLQbcbchxjn                         
+[1, 1, 1, 0, 0, 2, 0, 0, 0] | lLLLQLLQcbedgefijikjktanxtginbubc   | bkaajn                              
+[2, 0, 0, 1, 1, 0, 1, 0, 0] | hLLAMkbcedffggtsujlwef              | eLAkbccddemken                      

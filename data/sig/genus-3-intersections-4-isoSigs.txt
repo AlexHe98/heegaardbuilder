@@ -1,0 +1,14 @@
+Weight Vector                                 | Iso Sig                                | Simplified IsoSig                      
+-------------------------------------------------------------------------------------------------------------------------------
+[0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0, 0, 0] | mLLAvMwQQceecgihlkjjkluimbgmcdckgcb    | cMcabbgqw                              
+[0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 0, 1, 0, 0] | iLLLAQcbcfgehgghlsqaumjvg              | cMcabbgaj                              
+[0, 0, 0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1] | jLALMPPbcceefhgiieakrkfhbmc            | bkaajj                                 
+[0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0] | jLALALQaccfefhiiibgvecmears            | dLQbcbchxjn                            
+[0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 1] | nLLLwAMMPkcbggfijkjimllmlbmhcmamhcejcb | cMcabbjaj                              
+[0, 0, 1, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1] | jLALMPPbcceefhgiieikrkfhbmc            | cMcabbjqs                              
+[0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0] | jLALALQaccfefhiiibgvecmeejn            | eLAkbcbddhhwqj                         
+[0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0] | iLLAPPcceddggghhupvvoofdc              | bkaajn                                 
+[0, 0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0] | kLALAvQkaccfefhiijjbgvecmavggb         | dLQbcbchhjw                            
+[0, 1, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, 0] | nLLzLPwQPkccdighhiklkmlmlnnlggndbnnqgv | cMcabbjak                              
+[1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0] | iLLLMQcbdfffghhheviikrvgk              | fLLQcbeddeehhokum                      
+[1, 1, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0] | jLLLQLQceefegihiiluiailtisr            | cMcabbjqw                              

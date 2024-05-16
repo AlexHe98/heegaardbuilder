@@ -1,0 +1,22 @@
+Weight Vector                                 | Iso Sig                                   | Simplified IsoSig                         
+-------------------------------------------------------------------------------------------------------------------------------------
+[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 1, 2] | lLAzLLPQcccbehgkhkjkjtlfneftcfoff         | cMcabbgqw                                 
+[0, 0, 0, 0, 0, 1, 0, 1, 0, 1, 0, 1, 1, 0, 0] | kLLLLMQkbedgfjihiijapfcbivnkwo            | bkaajn                                    
+[0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 2, 0, 1, 0, 0] | jLLMLQPbdedghggiidwafcinfef               | cMcabbjaj                                 
+[0, 0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 0, 1, 0] | kLLAvPQkcedejggiiijpavaeooqppc            | cMcabbgaj                                 
+[0, 0, 0, 0, 1, 1, 0, 0, 2, 0, 1, 0, 0, 0, 0] | oLALwMzwQPcbcceefijjmmllnnapkkwbakbakkoqc | bkaajj                                    
+[0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 0, 0, 0, 2] | mLAMvMPMPbccdeghhijklleakipoivgoaef       | cMcabbjqw                                 
+[0, 0, 0, 0, 1, 1, 0, 2, 0, 0, 0, 0, 1, 0, 0] | nLALALLMPkbccfefijilklmmlajertdkwdfobo    | dLQbcbchxjn                               
+[0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1] | jLALALQbcceffihiiapkkluapcg               | eLAkbcbddhhwqn                            
+[0, 0, 0, 1, 0, 0, 0, 0, 0, 2, 0, 1, 0, 1, 0] | iLLLMQccddfghgghtgfacifgc                 | cMcabbjxr                                 
+[0, 0, 0, 1, 0, 1, 1, 0, 0, 0, 0, 0, 1, 0, 1] | kLALALPkcbceffijiijuajjipacscc            | cMcabbjak                                 
+[0, 0, 1, 0, 1, 0, 0, 0, 2, 0, 1, 0, 0, 0, 0] | oLALwMzwQPcbcceefijjmmllnntpkkwbakbakkoqc | cMcabbjqs                                 
+[0, 0, 1, 0, 1, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0] | nLALAvMwQkbccfefjijlklmmlugecmijbafjcv    | eLAkbcbddhhwqj                            
+[0, 0, 1, 0, 1, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1] | jLALALQbcceffihiiapkkluepbs               | fLAMcbcbdeehhwhxn                         
+[0, 0, 1, 1, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0] | oLLAPzLPLQcbdcdfggkkjnlnmntvofjdxtfvlfvcv | dLQbcbchhjw                               
+[0, 0, 1, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1] | kLALALPkbcceffhiijjapkkluqfnvc            | eLAkbcbddhhjhr                            
+[0, 0, 1, 2, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0] | lLLLLPMQcbdffihhjkjjkevikvnnxeqeb         | fLLQcaceeedjkuxkn                         
+[1, 0, 0, 1, 0, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0] | kLLLAwQkceefeghjijjluiairnqlfr            | dLQbccchhrw                               
+[1, 0, 0, 1, 0, 0, 0, 2, 0, 0, 0, 0, 1, 0, 0] | iLLLMQcbdfffghhheviikrvgk                 | fLLQcbeddeehhokum                         
+[1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1] | kLLLMPMkbdfffgihjjjeviiknujpnn            | gLLAQbdedfffdwqsujs                       
+[1, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0] | kLLAzzQkbdedgijiijjdwaswdlqvsc            | eLPkbcdddhrrnk                            

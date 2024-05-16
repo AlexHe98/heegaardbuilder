@@ -1,0 +1,32 @@
+Weight Vector               | Iso Sig                                | Simplified IsoSig                      
+-------------------------------------------------------------------------------------------------------------
+[0, 0, 0, 0, 0, 1, 3, 2, 2] | kLLAwMPkcedcfhihijjlajvahjvkqg         | cMcabbjaj                              
+[0, 0, 0, 0, 0, 3, 1, 2, 2] | kLLAwMPkcedcfhihijjtarvahjvkqg         | cMcabbgaj                              
+[0, 0, 0, 0, 1, 1, 3, 2, 1] | hLLLQkcdefggfgtcpalnfr                 | cMcabbgqw                              
+[0, 0, 0, 0, 1, 3, 1, 1, 2] | kLLvPPQkcdggifihjjjuwujkokkaat         | dLQbcbchhww                            
+[0, 0, 0, 1, 0, 3, 1, 1, 2] | hLLLQkcdefggfglcpaljfr                 | cMcabbjqw                              
+[0, 0, 0, 1, 2, 2, 1, 0, 2] | iLLwMQccedgfhghhpajugjong              | bkaajj                                 
+[0, 0, 1, 0, 1, 3, 0, 1, 2] | kLLvPPQkcdggifihjjjukujkokkaat         | dLQbcbchhjw                            
+[0, 0, 1, 1, 1, 3, 0, 0, 2] | hLLLQkcdfeggfglceqlgfs                 | fLLQcaceeedjkuxkn                      
+[0, 0, 1, 1, 2, 1, 1, 0, 2] | kLLwMMPkcedgfhhiijjpajugjntlgc         | cPcbbbqxh                              
+[0, 0, 1, 2, 0, 2, 1, 1, 1] | iLvAAQcbeffghhghaetaakojj              | eLAkbccddemkij                         
+[0, 0, 2, 0, 1, 0, 1, 2, 2] | iLLvQQccdefgghhhasplggrow              | bkaajn                                 
+[0, 0, 2, 0, 2, 0, 2, 1, 1] | jLLwMPQaedfhighiibiaoiiwadw            | cMcabbjxr                              
+[0, 0, 2, 1, 1, 0, 2, 1, 1] | kLvALPQkbefihgihijjlalunnwnfig         | eLPkbcdddhrrnk                         
+[0, 0, 2, 1, 2, 0, 1, 0, 2] | jLLvQMQcdhfggiihilfpdggaarx            | dLQbccchhrw                            
+[0, 0, 2, 1, 2, 3, 0, 0, 0] | jLLMzAQbdedghfiiievdwomfqof            | dLQbcbchxjn                            
+[0, 0, 3, 1, 2, 2, 0, 0, 0] | jLLMwMQbecefhiihixxoxaeuper            | eLAkbcbddhhjqn                         
+[0, 1, 0, 0, 1, 3, 1, 1, 1] | lLLAvwQQcbedchikjkikjaiobqhaaowjg      | cMcabbjak                              
+[0, 1, 0, 2, 2, 2, 0, 0, 1] | lLvAwLQQccdegigkhkkjjpjauacxvdjbg      | dLQbcbchxjj                            
+[0, 1, 2, 3, 0, 0, 0, 0, 2] | nLLAPLzPAkcedcfghikljlmmauwvcwavaucomb | dLQbcbchhjs                            
+[1, 0, 1, 0, 2, 1, 0, 1, 2] | jLLLzQQcdghhfghiiawtunfrfic            | cMcabbjqs                              
+[1, 0, 1, 0, 2, 2, 0, 2, 0] | iLLLMQcccfghhfghqfiaworos              | eLAkbcbddhxwqs                         
+[1, 0, 1, 0, 2, 3, 0, 1, 0] | nLLvPzLQQkcbehiilhjlmmmlqbqfcfmfqgronk | dLQbcbchxwn                            
+[1, 0, 1, 2, 0, 2, 0, 1, 1] | iLvAMQcbeffhhgghhapitojof              | gLLAQbeddfffhhokxjo                    
+[1, 0, 2, 2, 0, 1, 0, 1, 1] | iLLLMQcccfghhfghqfiagkroj              | eLAkbcbddhhjqj                         
+[1, 1, 3, 0, 1, 2, 0, 0, 0] | hLvAQkbeffgggflalaalwn                 | eLAkbcbddhhwqj                         
+[2, 0, 0, 1, 1, 2, 0, 1, 1] | kLvALPQkbefihgihijjlalpnrnnwig         | eLAkbcbddhxjqs                         
+[2, 0, 0, 2, 2, 0, 1, 1, 0] | nLvAMALwQkcdegfhfkkmjmlmpjaucovxoacqgb | eLAkbccddemken                         
+[2, 0, 2, 2, 0, 0, 1, 0, 1] | nLvLAMMzQkcfefhhgilklmlmupppjgovqfvlsb | fLAMcbccdeeemkehj                      
+[2, 1, 0, 1, 1, 2, 0, 1, 0] | iLvAMQccdefhgghhljaqnvnnv              | fLLQcaceeedjkuxkj                      
+[2, 1, 2, 1, 0, 1, 0, 1, 0] | kLLLLMQkbcffhjjhjiiebpkgllfacv         | eLAkbcbddhhwqn                         
