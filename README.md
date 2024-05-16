@@ -16,8 +16,10 @@ triangulation of *M*.
 The filling algorithm was designed in joint work with *James Morgan* and *Em
 Thompson*. Details can be found in our preprint at:
     https://arxiv.org/abs/2312.17556.
+This paper also describes some computational experiments that we performed
+using our algorithm. The data is available in the ``data/`` directory.
 
-The main implementation for this algorithm is contained in the script
+The main implementation for our filling algorithm is contained in the script
 ``heegaardbuilder.py``. The best ways to use this script are to either:
 - run it with Regina's regina-python command-line program in interactive
     mode; or
